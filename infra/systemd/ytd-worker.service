@@ -1,0 +1,15 @@
+[Unit]
+Description=YT Downloader Worker
+After=network.target redis.service postgresql.service
+
+[Service]
+Type=simple
+User=local-lenovo
+WorkingDirectory=/home/local-lenovo/yt-downloader/apps/backend
+EnvironmentFile=/home/local-lenovo/yt-downloader/apps/backend/.env
+ExecStart=/usr/bin/env go run ./cmd/worker
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

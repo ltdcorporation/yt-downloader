@@ -1,0 +1,9 @@
+tunnel: YOUR_TUNNEL_ID
+credentials-file: /home/local-lenovo/.cloudflared/YOUR_TUNNEL_ID.json
+
+ingress:
+  - hostname: www.domain.com
+    service: http://127.0.0.1:3000
+  - hostname: api.domain.com
+    service: http://127.0.0.1:8080
+  - service: http_status:404
