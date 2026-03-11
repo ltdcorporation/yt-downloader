@@ -92,7 +92,7 @@ func (r *Resolver) Resolve(ctx context.Context, rawURL string) (ResolveResult, e
 		return ResolveResult{}, errors.New("yt-dlp binary is not configured")
 	}
 
-	targetURL, headers, userAgent, err := parseCurlOrURL(rawURL)
+	targetURL, headers, userAgent, err := ParseInput(rawURL)
 	if err != nil {
 		return ResolveResult{}, err
 	}
@@ -219,7 +219,7 @@ func validateYouTubeURL(rawURL string) error {
 	return nil
 }
 
-func parseCurlOrURL(rawInput string) (string, map[string]string, string, error) {
+func ParseInput(rawInput string) (string, map[string]string, string, error) {
 	input := strings.TrimSpace(rawInput)
 	if input == "" {
 		return "", nil, "", errors.New("url is required")

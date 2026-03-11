@@ -23,6 +23,13 @@ infra/
 
 ## Quick Start
 
+### 0) Prepare env files
+
+```bash
+cp apps/backend/.env.example apps/backend/.env
+cp apps/web/.env.example apps/web/.env
+```
+
 ### 1) Frontend
 
 ```bash
@@ -46,7 +53,49 @@ cd apps/backend
 go run ./cmd/worker
 ```
 
+### 4) Build Backend Binaries (for systemd)
+
+```bash
+make backend-build
+```
+
+### 5) Runtime Dependencies
+
+```text
+- Redis (required by Asynq queue)
+- PostgreSQL (required by jobs/errors store)
+- yt-dlp binary
+- ffmpeg binary
+- Cloudflare R2 credentials (for MP3 artifacts)
+```
+
+## API Summary (MVP)
+
+```text
+GET  /healthz
+POST /v1/youtube/resolve    { url }
+GET  /v1/download/mp4       ?url=&format_id=
+POST /v1/jobs/mp3           { url }
+GET  /v1/jobs/:id
+GET  /admin/jobs            (basic auth)
+```
+
 ## Notes
 
-- This scaffold intentionally starts with placeholder handlers for format resolve and queue flow.
-- Next step is wiring `yt-dlp`, Redis, PostgreSQL migrations, and R2 signed URL delivery.
+- MP4 redirects now require `url` + `format_id` (no raw target redirect).
+- MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
+- `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
+- CORS allow-list is controlled by `CORS_ALLOWED_ORIGINS`.
+- Jobs and `job_errors` tables are auto-created on first access.
+
+## Smoke Test
+
+```bash
+make smoke
+```
+
+Optional full MP3 flow check:
+
+```bash
+SMOKE_TEST_YOUTUBE_URL="https://www.youtube.com/watch?v=..." make smoke
+```

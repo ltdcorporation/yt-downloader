@@ -20,6 +20,7 @@ func main() {
 		cfg.MaxFileSizeBytes,
 	)
 	server := httplayer.NewServer(cfg, logger, resolver)
+	defer server.Close()
 
 	logger.Printf("api server starting on :%s (env=%s)", cfg.HTTPPort, cfg.AppEnv)
 	if err := http.ListenAndServe(":"+cfg.HTTPPort, server.Handler()); err != nil {

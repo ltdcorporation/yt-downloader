@@ -44,6 +44,10 @@ p {
   color: var(--muted);
 }
 
+a {
+  color: var(--brand);
+}
+
 label {
   display: block;
   font-size: 0.9rem;
@@ -100,6 +104,34 @@ button:hover {
   font-size: 0.85rem;
 }
 
+.error-text {
+  color: #b42318;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.video-meta {
+  display: flex;
+  gap: 12px;
+}
+
+.video-meta img {
+  width: 140px;
+  height: 80px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+
+.video-meta h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.video-meta p {
+  margin: 0;
+}
+
 .pill {
   display: inline-block;
   border: 1px solid #cbd5e1;
@@ -116,5 +148,17 @@ button:hover {
 
   main {
     padding-top: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .video-meta {
+    flex-direction: column;
+  }
+
+  .video-meta img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
   }
 }

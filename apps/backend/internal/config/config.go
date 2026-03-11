@@ -28,9 +28,12 @@ type Config struct {
 	AdminBasicAuthPass string
 
 	R2Endpoint        string
+	R2Region          string
 	R2Bucket          string
 	R2AccessKeyID     string
 	R2SecretAccessKey string
+
+	CORSAllowedOrigins string
 }
 
 func Load() Config {
@@ -52,9 +55,11 @@ func Load() Config {
 		AdminBasicAuthUser:      getenv("ADMIN_BASIC_AUTH_USER", "admin"),
 		AdminBasicAuthPass:      getenv("ADMIN_BASIC_AUTH_PASS", "change-me"),
 		R2Endpoint:              getenv("R2_ENDPOINT", ""),
+		R2Region:                getenv("R2_REGION", "auto"),
 		R2Bucket:                getenv("R2_BUCKET", ""),
 		R2AccessKeyID:           getenv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey:       getenv("R2_SECRET_ACCESS_KEY", ""),
+		CORSAllowedOrigins:      getenv("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000"),
 	}
 }
 

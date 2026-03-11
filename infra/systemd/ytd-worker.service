@@ -5,9 +5,9 @@ After=network.target redis.service postgresql.service
 [Service]
 Type=simple
 User=local-lenovo
-WorkingDirectory=/home/local-lenovo/yt-downloader/apps/backend
+WorkingDirectory=/home/local-lenovo/yt-downloader
 EnvironmentFile=/home/local-lenovo/yt-downloader/apps/backend/.env
-ExecStart=/usr/bin/env go run ./cmd/worker
+ExecStart=/home/local-lenovo/yt-downloader/bin/ytd-worker
 Restart=always
 RestartSec=3
 

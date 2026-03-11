@@ -3,7 +3,7 @@ package youtube
 import "testing"
 
 func TestParseCurlOrURL(t *testing.T) {
-	plainURL, plainHeaders, plainUA, err := parseCurlOrURL("https://www.youtube.com/watch?v=abc123")
+	plainURL, plainHeaders, plainUA, err := ParseInput("https://www.youtube.com/watch?v=abc123")
 	if err != nil {
 		t.Fatalf("plain URL should be parsed, got err: %v", err)
 	}
@@ -15,7 +15,7 @@ func TestParseCurlOrURL(t *testing.T) {
 	}
 
 	curlInput := `curl "https://www.youtube.com/watch?v=abc123" -H "Referer: https://www.youtube.com/" -A "Mozilla/5.0"`
-	curlURL, curlHeaders, curlUA, err := parseCurlOrURL(curlInput)
+	curlURL, curlHeaders, curlUA, err := ParseInput(curlInput)
 	if err != nil {
 		t.Fatalf("curl input should be parsed, got err: %v", err)
 	}
