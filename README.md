@@ -128,3 +128,25 @@ Optional full MP3 flow check:
 ```bash
 SMOKE_TEST_YOUTUBE_URL="https://www.youtube.com/watch?v=..." make smoke
 ```
+
+## Backend Test (Unit + Redis + Postgres Integration)
+
+Run everything (with preflight Redis/Postgres checks):
+
+```bash
+./scripts/test-backend.sh
+```
+
+Via Makefile:
+
+```bash
+make backend-test
+```
+
+Override test dependencies if needed:
+
+```bash
+YTD_TEST_REDIS_ADDR=127.0.0.1:6382 \
+YTD_TEST_POSTGRES_ADMIN_DSN='postgres://postgres:123987@127.0.0.1:5435/postgres?sslmode=disable' \
+./scripts/test-backend.sh
+```
