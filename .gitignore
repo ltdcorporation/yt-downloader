@@ -26,6 +26,7 @@ coverage.out
 # Runtime artifacts
 tmp/
 dist/
+.deploy.lock
 
 # Media output (yt-dlp/ffmpeg)
 *.mp3
