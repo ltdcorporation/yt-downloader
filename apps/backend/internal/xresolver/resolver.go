@@ -66,6 +66,8 @@ type ytdlpFormat struct {
 	Ext            string  `json:"ext"`
 	VideoCodec     string  `json:"vcodec"`
 	AudioCodec     string  `json:"acodec"`
+	Protocol       string  `json:"protocol"`
+	FormatNote     string  `json:"format_note"`
 	URL            string  `json:"url"`
 	Height         int     `json:"height"`
 	Filesize       int64   `json:"filesize"`
@@ -298,7 +300,7 @@ func (r *Resolver) selectFormats(raw []ytdlpFormat) []Format {
 	bestByHeight := make(map[int]Format)
 
 	for _, item := range raw {
-		if !isProgressiveMP4(item) {
+		if !isProgressiveMP4(item) && !isLikelyXDirectMP4(item) {
 			continue
 		}
 		if item.Height <= 0 || item.Height > r.maxQuality {
@@ -354,6 +356,30 @@ func isProgressiveMP4(item ytdlpFormat) bool {
 	if item.AudioCodec == "" || item.AudioCodec == "none" {
 		return false
 	}
+	return true
+}
+
+func isLikelyXDirectMP4(item ytdlpFormat) bool {
+	if strings.ToLower(item.Ext) != "mp4" {
+		return false
+	}
+	if item.URL == "" || item.Height <= 0 {
+		return false
+	}
+	if !strings.HasPrefix(strings.ToLower(item.FormatID), "http-") {
+		return false
+	}
+
+	protocol := strings.ToLower(strings.TrimSpace(item.Protocol))
+	if protocol != "" && protocol != "https" && protocol != "http" {
+		return false
+	}
+
+	note := strings.ToLower(strings.TrimSpace(item.FormatNote))
+	if strings.Contains(note, "audio") && !strings.Contains(note, "video") {
+		return false
+	}
+
 	return true
 }
 

@@ -522,6 +522,30 @@ func TestResolve_ResponseEdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("accepts direct http mp4 when codec metadata is empty", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title: "Direct MP4",
+			Formats: []ytdlpFormat{
+				{FormatID: "http-256", Ext: "mp4", VideoCodec: "", AudioCodec: "", Protocol: "https", URL: "https://video-cdn.example/270.mp4", Height: 270, Filesize: 1000},
+				{FormatID: "http-832", Ext: "mp4", VideoCodec: "", AudioCodec: "", Protocol: "https", URL: "https://video-cdn.example/360.mp4", Height: 360, Filesize: 2000},
+				{FormatID: "hls-250", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", Protocol: "m3u8_native", URL: "https://video-cdn.example/360.m3u8", Height: 360},
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		result, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err != nil {
+			t.Fatalf("expected resolve success, got %v", err)
+		}
+		if len(result.Formats) != 2 {
+			t.Fatalf("expected 2 formats from direct http mp4 fallback, got %d (%#v)", len(result.Formats), result.Formats)
+		}
+		if result.Formats[0].ID != "http-256" || result.Formats[1].ID != "http-832" {
+			t.Fatalf("unexpected selected formats: %#v", result.Formats)
+		}
+	})
+
 	t.Run("negative duration clamped to zero + thumbnail fallback", func(t *testing.T) {
 		payload := ytdlpOutput{
 			Title:     "Duration Clamp",
@@ -571,6 +595,85 @@ func TestSelectFormats_BestByHeightAndLimits(t *testing.T) {
 	}
 	if formats[1].Filesize != 450 {
 		t.Fatalf("expected filesize from filesize_approx, got %d", formats[1].Filesize)
+	}
+}
+
+func TestSelectFormats_AcceptsXDirectHTTPMP4Fallback(t *testing.T) {
+	resolver := NewResolver("yt-dlp", "", 1080, 0, "", "", true)
+
+	formats := resolver.selectFormats([]ytdlpFormat{
+		{FormatID: "http-256", Ext: "mp4", URL: "https://video-cdn.example/270.mp4", Height: 270, Protocol: "https", Filesize: 1000},
+		{FormatID: "http-832", Ext: "mp4", URL: "https://video-cdn.example/360.mp4", Height: 360, Protocol: "https", Filesize: 2000},
+		{FormatID: "hls-audio-64000", Ext: "mp4", URL: "https://video-cdn.example/audio.m3u8", Height: 360, Protocol: "m3u8_native", FormatNote: "Audio"},
+	})
+
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 direct http mp4 formats, got %d (%#v)", len(formats), formats)
+	}
+	if formats[0].ID != "http-256" || formats[1].ID != "http-832" {
+		t.Fatalf("unexpected format IDs: %#v", formats)
+	}
+}
+
+func TestIsLikelyXDirectMP4(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ytdlpFormat
+		want bool
+	}{
+		{
+			name: "valid direct http mp4",
+			in: ytdlpFormat{
+				FormatID: "http-832",
+				Ext:      "mp4",
+				Protocol: "https",
+				Height:   360,
+				URL:      "https://video.twimg.com/amplify_video/x.mp4",
+			},
+			want: true,
+		},
+		{
+			name: "not http format id",
+			in: ytdlpFormat{
+				FormatID: "hls-250",
+				Ext:      "mp4",
+				Protocol: "m3u8_native",
+				Height:   360,
+				URL:      "https://video.twimg.com/amplify_video/x.m3u8",
+			},
+			want: false,
+		},
+		{
+			name: "audio only note",
+			in: ytdlpFormat{
+				FormatID:   "http-64",
+				Ext:        "mp4",
+				Protocol:   "https",
+				Height:     360,
+				URL:        "https://video.twimg.com/amplify_video/audio.mp4",
+				FormatNote: "Audio",
+			},
+			want: false,
+		},
+		{
+			name: "missing url",
+			in: ytdlpFormat{
+				FormatID: "http-832",
+				Ext:      "mp4",
+				Protocol: "https",
+				Height:   360,
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isLikelyXDirectMP4(tc.in)
+			if got != tc.want {
+				t.Fatalf("unexpected result, got=%v want=%v", got, tc.want)
+			}
+		})
 	}
 }
 
