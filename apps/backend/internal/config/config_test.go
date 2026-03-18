@@ -16,6 +16,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("X_COOKIES_DIR", "")
 	t.Setenv("X_COOKIES_FILES", "")
 	t.Setenv("X_RESOLVE_TRY_WITHOUT_COOKIES", "")
+	t.Setenv("IG_MAX_QUALITY", "")
+	t.Setenv("IG_COOKIES_DIR", "")
+	t.Setenv("IG_COOKIES_FILES", "")
+	t.Setenv("IG_RESOLVE_TRY_WITHOUT_COOKIES", "")
 	t.Setenv("MP3_BITRATE", "")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "")
 	t.Setenv("JOB_RETENTION_DAYS", "")
@@ -52,6 +56,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.XResolveTryWithoutCookies != true {
 		t.Fatalf("unexpected default XResolveTryWithoutCookies: %v", cfg.XResolveTryWithoutCookies)
 	}
+	if cfg.IGMaxQuality != 1080 {
+		t.Fatalf("unexpected default IGMaxQuality: %d", cfg.IGMaxQuality)
+	}
+	if cfg.IGResolveTryWithoutCookies != true {
+		t.Fatalf("unexpected default IGResolveTryWithoutCookies: %v", cfg.IGResolveTryWithoutCookies)
+	}
 	if cfg.RedisAddr != "127.0.0.1:6379" {
 		t.Fatalf("unexpected default RedisAddr: %s", cfg.RedisAddr)
 	}
@@ -76,6 +86,10 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("X_COOKIES_DIR", "/tmp/x-cookies")
 	t.Setenv("X_COOKIES_FILES", "/tmp/a.txt,/tmp/b.txt")
 	t.Setenv("X_RESOLVE_TRY_WITHOUT_COOKIES", "false")
+	t.Setenv("IG_MAX_QUALITY", "1440")
+	t.Setenv("IG_COOKIES_DIR", "/tmp/ig-cookies")
+	t.Setenv("IG_COOKIES_FILES", "/tmp/ig-a.txt,/tmp/ig-b.txt")
+	t.Setenv("IG_RESOLVE_TRY_WITHOUT_COOKIES", "false")
 	t.Setenv("MP3_BITRATE", "256")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "120")
 	t.Setenv("JOB_RETENTION_DAYS", "30")
@@ -117,6 +131,18 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.XResolveTryWithoutCookies != false {
 		t.Fatalf("unexpected X_RESOLVE_TRY_WITHOUT_COOKIES: %v", cfg.XResolveTryWithoutCookies)
+	}
+	if cfg.IGMaxQuality != 1440 {
+		t.Fatalf("unexpected IG_MAX_QUALITY: %d", cfg.IGMaxQuality)
+	}
+	if cfg.IGCookiesDir != "/tmp/ig-cookies" {
+		t.Fatalf("unexpected IG_COOKIES_DIR: %s", cfg.IGCookiesDir)
+	}
+	if cfg.IGCookiesFiles != "/tmp/ig-a.txt,/tmp/ig-b.txt" {
+		t.Fatalf("unexpected IG_COOKIES_FILES: %s", cfg.IGCookiesFiles)
+	}
+	if cfg.IGResolveTryWithoutCookies != false {
+		t.Fatalf("unexpected IG_RESOLVE_TRY_WITHOUT_COOKIES: %v", cfg.IGResolveTryWithoutCookies)
 	}
 	if cfg.MP3Bitrate != 256 || cfg.MP3OutputTTLMinutes != 120 || cfg.JobRetentionDays != 30 {
 		t.Fatalf("unexpected MP3/job retention overrides: bitrate=%d ttl=%d retention=%d", cfg.MP3Bitrate, cfg.MP3OutputTTLMinutes, cfg.JobRetentionDays)

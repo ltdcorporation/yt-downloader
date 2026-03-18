@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
+_Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 
@@ -96,6 +96,7 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
   - [x] `GET /healthz`
   - [x] `POST /v1/youtube/resolve`
   - [x] `POST /v1/x/resolve`
+  - [x] `POST /v1/instagram/resolve` (alias: `POST /v1/ig/resolve`)
   - [x] `GET /v1/download/mp4`
   - [x] `POST /v1/jobs/mp3`
   - [x] `GET /v1/jobs/:id`
@@ -114,6 +115,14 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
   - [x] `X_RESOLVE_TRY_WITHOUT_COOKIES`
 - [x] Cookie account X diekstrak dari `automation/postx/runtime/chromium-profiles` ke runtime `yt-downloader/runtime/x-cookies` (8 profile)
 - [x] Patch selector format X sudah masuk: fallback direct `http-*` MP4 untuk kasus metadata codec kosong (false-negative fix)
+- [x] Resolver Instagram aktif untuk URL `reel/reels/p/tv`
+- [x] Multi-cookie fallback aktif untuk resolver Instagram (rotasi akun sampai resolve sukses)
+- [x] Env runtime Instagram resolver sudah ditambah:
+  - [x] `IG_MAX_QUALITY`
+  - [x] `IG_COOKIES_DIR`
+  - [x] `IG_COOKIES_FILES`
+  - [x] `IG_RESOLVE_TRY_WITHOUT_COOKIES`
+- [x] Error code typed untuk Instagram HLS-only sudah ada: `ig_hls_only_not_supported`
 
 ### B. Milestone BE-1 — Runtime & API Hardening (Done)
 
@@ -167,16 +176,35 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
   - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post yang tidak punya direct MP4
   - [ ] ranking cookie profile berdasarkan success-rate
 
-### F. Backend Quality Checklist
+### F. Milestone BE-5 — Instagram Resolver + Multi-Cookies (Done, Hardening Lanjut)
+
+**Target:** resolve link Instagram non-live secara stabil, termasuk konten yang butuh sesi akun.
+
+- [x] Tambah endpoint `POST /v1/instagram/resolve` + alias `POST /v1/ig/resolve`
+- [x] Validasi host/path Instagram yang didukung (`reel/reels/p/tv`)
+- [x] Rotasi cookie profile dari file list + directory scan
+- [x] Response menyertakan `cookie_profile` yang berhasil dipakai
+- [x] Policy explicit: live content ditolak
+- [x] Error code typed untuk HLS-only: `ig_hls_only_not_supported`
+- [x] Hardening test:
+  - [x] edge cases resolver + endpoint
+  - [x] coverage `internal/igresolver` stabil di ~95%
+- [ ] Next hardening (belum):
+  - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post IG yang tidak punya direct MP4
+  - [ ] ranking cookie profile berdasarkan success-rate
+
+### G. Backend Quality Checklist
 
 - [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
 - [x] Resolver X multi-cookie aktif + tervalidasi real-link
-- [x] False-negative direct `http-*` MP4 sudah dipatch
+- [x] Resolver Instagram multi-cookie aktif + tervalidasi test-suite
+- [x] False-negative direct `http-*` MP4 untuk X sudah dipatch
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
 - [ ] Worker tidak silent-fail
 - [ ] Retention/cleanup jobs tetap terkendali
 - [ ] Fallback untuk varian HLS-only post X
+- [ ] Fallback untuk varian HLS-only post Instagram
 
 ---
 
@@ -198,7 +226,9 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] Worker aktif stabil
 - [x] R2 aktif dan MP3 end-to-end lulus test
 - [x] User bisa resolve X/Twitter non-live via `POST /v1/x/resolve`
+- [x] User bisa resolve Instagram non-live via `POST /v1/instagram/resolve`
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
+- [ ] Semua varian post video Instagram (termasuk HLS-only) 100% covered
 
 ### Security/Operational Gate
 - [x] Web publik, API private internal
@@ -235,3 +265,32 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini (by design: belum dikerjakan)
 - [ ] UI frontend untuk resolve X + picker kualitas download masih backlog (belum implementasi)
 - [ ] UI frontend belum map code `x_hls_only_not_supported` ke warning yang user-friendly
+
+---
+
+## 5) Delivery Notes — Implementasi Fitur Instagram Resolver (2026-03-18)
+
+### A. Scope yang dikerjakan
+
+- [x] Backend resolver Instagram dengan endpoint baru `POST /v1/instagram/resolve`
+- [x] Alias endpoint `POST /v1/ig/resolve`
+- [x] Multi-account cookie support untuk auto-rotate saat resolve
+- [x] Typed error code untuk HLS-only: `ig_hls_only_not_supported`
+
+### B. Jalur pengerjaan
+
+- [x] Patch code di repo **workspace**
+- [x] Hardening test + coverage resolver + HTTP handler
+- [x] Integrasi config/env baru untuk IG cookies
+
+### C. Hasil validasi
+
+- [x] Unit + integration suite backend lulus (`make backend-test`)
+- [x] Endpoint IG menerima flow yang sama seperti X (resolve + format list + cookie_profile)
+- [x] Error non-generic untuk kasus HLS-only sudah tersedia untuk wiring FE
+
+### D. Catatan batasan saat ini (Instagram)
+
+- [ ] Untuk post IG HLS-only, belum ada remux fallback (masih return typed warning)
+- [ ] UI frontend untuk resolve IG + picker kualitas download masih backlog (belum implementasi)
+- [ ] UI frontend belum map code `ig_hls_only_not_supported` ke warning yang user-friendly
