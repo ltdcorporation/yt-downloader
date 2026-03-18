@@ -375,6 +375,31 @@ func TestHandleResolveX(t *testing.T) {
 		if payload["error"] != "x bad url" {
 			t.Fatalf("unexpected error payload: %#v", payload)
 		}
+		if _, ok := payload["code"]; ok {
+			t.Fatalf("generic resolver error should not include code, got %#v", payload)
+		}
+	})
+
+	t.Run("resolver typed error includes code", func(t *testing.T) {
+		cfg := baseTestConfig()
+		xResolver := &fakeXResolver{err: &xresolver.ResolveError{Code: xresolver.ErrCodeXHLSOnlyNotSupported, Message: "X video is HLS-only and not supported yet"}}
+		server := newTestServerWithXResolver(t, cfg, &fakeResolver{}, xResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/x/resolve", bytes.NewBufferString(`{"url":"https://x.com/x/status/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "X video is HLS-only and not supported yet" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+		if payload["code"] != xresolver.ErrCodeXHLSOnlyNotSupported {
+			t.Fatalf("expected code %q, got %#v", xresolver.ErrCodeXHLSOnlyNotSupported, payload["code"])
+		}
 	})
 
 	t.Run("success", func(t *testing.T) {

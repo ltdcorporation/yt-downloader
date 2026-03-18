@@ -3,6 +3,7 @@ package xresolver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -472,6 +473,43 @@ func TestResolve_FailureWrappingByCandidateCount(t *testing.T) {
 			t.Fatalf("expected root failure reason in aggregate error, got %v", err)
 		}
 	})
+
+	t.Run("non-retryable typed error bypasses aggregate wrapping", func(t *testing.T) {
+		dir := t.TempDir()
+		fileA := filepath.Join(dir, "acc-a.txt")
+		fileB := filepath.Join(dir, "acc-b.txt")
+		if err := os.WriteFile(fileA, []byte("# a"), 0o600); err != nil {
+			t.Fatalf("failed to write fileA: %v", err)
+		}
+		if err := os.WriteFile(fileB, []byte("# b"), 0o600); err != nil {
+			t.Fatalf("failed to write fileB: %v", err)
+		}
+
+		payload := ytdlpOutput{
+			Title: "HLS Only",
+			Formats: []ytdlpFormat{
+				{FormatID: "hls-audio-64000", Ext: "mp4", VideoCodec: "none", AudioCodec: "aac", Protocol: "m3u8_native", URL: "https://video-cdn.example/audio.m3u8"},
+				{FormatID: "hls-250", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", Protocol: "m3u8_native", URL: "https://video-cdn.example/360.m3u8", Height: 360},
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+
+		resolver := NewResolver(script, "", 1080, 0, "", fileA+","+fileB, false)
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/123")
+		if err == nil {
+			t.Fatal("expected typed error")
+		}
+		if strings.Contains(err.Error(), "failed to resolve X URL with") {
+			t.Fatalf("typed non-retryable error should not be wrapped, got %v", err)
+		}
+		var resolveErr *ResolveError
+		if !errors.As(err, &resolveErr) {
+			t.Fatalf("expected typed resolve error, got %T: %v", err, err)
+		}
+		if resolveErr.Code != ErrCodeXHLSOnlyNotSupported {
+			t.Fatalf("expected code %q, got %q", ErrCodeXHLSOnlyNotSupported, resolveErr.Code)
+		}
+	})
 }
 
 func TestResolve_ResponseEdgeCases(t *testing.T) {
@@ -519,6 +557,33 @@ func TestResolve_ResponseEdgeCases(t *testing.T) {
 		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
 		if err == nil || !strings.Contains(err.Error(), "no downloadable MP4 format is available") {
 			t.Fatalf("expected no format error, got %v", err)
+		}
+	})
+
+	t.Run("hls-only source returns typed unsupported error", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title: "HLS Only",
+			Formats: []ytdlpFormat{
+				{FormatID: "hls-audio-64000", Ext: "mp4", VideoCodec: "none", AudioCodec: "aac", Protocol: "m3u8_native", URL: "https://video-cdn.example/audio.m3u8"},
+				{FormatID: "hls-250", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", Protocol: "m3u8_native", URL: "https://video-cdn.example/360.m3u8", Height: 360},
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err == nil {
+			t.Fatal("expected hls-only error")
+		}
+		var resolveErr *ResolveError
+		if !errors.As(err, &resolveErr) {
+			t.Fatalf("expected typed resolve error, got %T: %v", err, err)
+		}
+		if resolveErr.Code != ErrCodeXHLSOnlyNotSupported {
+			t.Fatalf("expected code %q, got %q", ErrCodeXHLSOnlyNotSupported, resolveErr.Code)
+		}
+		if !strings.Contains(strings.ToLower(resolveErr.Error()), "hls-only") {
+			t.Fatalf("expected hls-only message, got %v", resolveErr)
 		}
 	})
 
@@ -670,6 +735,54 @@ func TestIsLikelyXDirectMP4(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := isLikelyXDirectMP4(tc.in)
+			if got != tc.want {
+				t.Fatalf("unexpected result, got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsLikelyHLSOnlySource(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  []ytdlpFormat
+		want bool
+	}{
+		{
+			name: "pure hls video source",
+			raw: []ytdlpFormat{
+				{FormatID: "hls-audio-64000", Protocol: "m3u8_native", VideoCodec: "none", AudioCodec: "aac"},
+				{FormatID: "hls-250", Protocol: "m3u8_native", VideoCodec: "avc1", AudioCodec: "none", Height: 360},
+			},
+			want: true,
+		},
+		{
+			name: "mixed hls and direct video",
+			raw: []ytdlpFormat{
+				{FormatID: "hls-250", Protocol: "m3u8_native", VideoCodec: "avc1", AudioCodec: "none", Height: 360},
+				{FormatID: "http-832", Protocol: "https", Height: 360, URL: "https://video-cdn.example/360.mp4"},
+			},
+			want: false,
+		},
+		{
+			name: "no hls video",
+			raw: []ytdlpFormat{
+				{FormatID: "http-832", Protocol: "https", Height: 360, URL: "https://video-cdn.example/360.mp4"},
+			},
+			want: false,
+		},
+		{
+			name: "hls audio only",
+			raw: []ytdlpFormat{
+				{FormatID: "hls-audio-64000", Protocol: "m3u8_native", VideoCodec: "none", AudioCodec: "aac"},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isLikelyHLSOnlySource(tc.raw)
 			if got != tc.want {
 				t.Fatalf("unexpected result, got=%v want=%v", got, tc.want)
 			}

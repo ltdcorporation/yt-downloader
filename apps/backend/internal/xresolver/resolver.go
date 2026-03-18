@@ -19,6 +19,10 @@ import (
 	"yt-downloader/backend/internal/youtube"
 )
 
+const (
+	ErrCodeXHLSOnlyNotSupported = "x_hls_only_not_supported"
+)
+
 type Resolver struct {
 	ytdlpBinary          string
 	ytdlpJSRuntimes      string
@@ -27,6 +31,22 @@ type Resolver struct {
 	cookiesDir           string
 	cookiesFiles         string
 	tryWithoutCookieFile bool
+}
+
+// ResolveError carries machine-readable resolver error code for API response mapping.
+type ResolveError struct {
+	Code    string
+	Message string
+}
+
+func (e *ResolveError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Message) == "" {
+		return "resolve failed"
+	}
+	return e.Message
 }
 
 type Format struct {
@@ -128,6 +148,9 @@ func (r *Resolver) Resolve(ctx context.Context, rawURL string) (ResolveResult, e
 		if err == nil {
 			return result, nil
 		}
+		if isNonRetryableResolveErr(err) {
+			return ResolveResult{}, err
+		}
 		lastErr = err
 	}
 
@@ -193,6 +216,12 @@ func (r *Resolver) resolveWithCandidate(ctx context.Context, targetURL string, h
 
 	formats := r.selectFormats(payload.Formats)
 	if len(formats) == 0 {
+		if isLikelyHLSOnlySource(payload.Formats) {
+			return ResolveResult{}, &ResolveError{
+				Code:    ErrCodeXHLSOnlyNotSupported,
+				Message: "X video is HLS-only and not supported yet",
+			}
+		}
 		return ResolveResult{}, errors.New("no downloadable MP4 format is available")
 	}
 
@@ -294,6 +323,46 @@ func (r *Resolver) buildCookieCandidates() []cookieCandidate {
 	}
 
 	return out
+}
+
+func isNonRetryableResolveErr(err error) bool {
+	var resolveErr *ResolveError
+	if !errors.As(err, &resolveErr) {
+		return false
+	}
+	return resolveErr.Code == ErrCodeXHLSOnlyNotSupported
+}
+
+func isLikelyHLSOnlySource(raw []ytdlpFormat) bool {
+	hasHLSVideo := false
+	hasNonHLSVideo := false
+
+	for _, item := range raw {
+		if !hasVideoTrack(item) {
+			continue
+		}
+		if isHLSFormat(item) {
+			hasHLSVideo = true
+			continue
+		}
+		hasNonHLSVideo = true
+	}
+
+	return hasHLSVideo && !hasNonHLSVideo
+}
+
+func hasVideoTrack(item ytdlpFormat) bool {
+	if item.Height > 0 {
+		return true
+	}
+	vcodec := strings.ToLower(strings.TrimSpace(item.VideoCodec))
+	return vcodec != "" && vcodec != "none"
+}
+
+func isHLSFormat(item ytdlpFormat) bool {
+	protocol := strings.ToLower(strings.TrimSpace(item.Protocol))
+	formatID := strings.ToLower(strings.TrimSpace(item.FormatID))
+	return strings.Contains(protocol, "m3u8") || strings.HasPrefix(formatID, "hls-")
 }
 
 func (r *Resolver) selectFormats(raw []ytdlpFormat) []Format {

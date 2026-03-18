@@ -190,6 +190,14 @@ func (s *Server) handleResolveX(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.xResolver.Resolve(r.Context(), req.URL)
 	if err != nil {
+		var resolveErr *xresolver.ResolveError
+		if errors.As(err, &resolveErr) && strings.TrimSpace(resolveErr.Code) != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": resolveErr.Error(),
+				"code":  resolveErr.Code,
+			})
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
