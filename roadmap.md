@@ -82,6 +82,7 @@ _Last update: 2026-03-18_
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
 - [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
 - [x] R2 sudah diisi config real
+- [x] Prefix object storage configurable via `R2_KEY_PREFIX` (aktif: `yt-downloader/prod`)
 - [x] MP3 pipeline sudah lolos validasi end-to-end produksi
 
 ### B. Milestone BE-1 — Runtime & API Hardening (Done)
@@ -99,6 +100,7 @@ _Last update: 2026-03-18_
 - [x] Isi env R2 real:
   - [x] `R2_ENDPOINT`
   - [x] `R2_BUCKET`
+  - [x] `R2_KEY_PREFIX`
   - [x] `R2_ACCESS_KEY_ID`
   - [x] `R2_SECRET_ACCESS_KEY`
 - [x] Verifikasi flow:
