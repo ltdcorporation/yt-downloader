@@ -12,6 +12,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("MAX_VIDEO_DURATION_MINUTES", "")
 	t.Setenv("MAX_FILE_SIZE_BYTES", "")
 	t.Setenv("YOUTUBE_MAX_QUALITY", "")
+	t.Setenv("X_MAX_QUALITY", "")
+	t.Setenv("X_COOKIES_DIR", "")
+	t.Setenv("X_COOKIES_FILES", "")
+	t.Setenv("X_RESOLVE_TRY_WITHOUT_COOKIES", "")
 	t.Setenv("MP3_BITRATE", "")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "")
 	t.Setenv("JOB_RETENTION_DAYS", "")
@@ -42,6 +46,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.RateLimitRPS != 3 {
 		t.Fatalf("unexpected default RateLimitRPS: %v", cfg.RateLimitRPS)
 	}
+	if cfg.XMaxQuality != 1080 {
+		t.Fatalf("unexpected default XMaxQuality: %d", cfg.XMaxQuality)
+	}
+	if cfg.XResolveTryWithoutCookies != true {
+		t.Fatalf("unexpected default XResolveTryWithoutCookies: %v", cfg.XResolveTryWithoutCookies)
+	}
 	if cfg.RedisAddr != "127.0.0.1:6379" {
 		t.Fatalf("unexpected default RedisAddr: %s", cfg.RedisAddr)
 	}
@@ -62,6 +72,10 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("MAX_VIDEO_DURATION_MINUTES", "90")
 	t.Setenv("MAX_FILE_SIZE_BYTES", "not-int64")
 	t.Setenv("YOUTUBE_MAX_QUALITY", "2160")
+	t.Setenv("X_MAX_QUALITY", "720")
+	t.Setenv("X_COOKIES_DIR", "/tmp/x-cookies")
+	t.Setenv("X_COOKIES_FILES", "/tmp/a.txt,/tmp/b.txt")
+	t.Setenv("X_RESOLVE_TRY_WITHOUT_COOKIES", "false")
 	t.Setenv("MP3_BITRATE", "256")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "120")
 	t.Setenv("JOB_RETENTION_DAYS", "30")
@@ -91,6 +105,18 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.YouTubeMaxQuality != 2160 {
 		t.Fatalf("unexpected YOUTUBE_MAX_QUALITY: %d", cfg.YouTubeMaxQuality)
+	}
+	if cfg.XMaxQuality != 720 {
+		t.Fatalf("unexpected X_MAX_QUALITY: %d", cfg.XMaxQuality)
+	}
+	if cfg.XCookiesDir != "/tmp/x-cookies" {
+		t.Fatalf("unexpected X_COOKIES_DIR: %s", cfg.XCookiesDir)
+	}
+	if cfg.XCookiesFiles != "/tmp/a.txt,/tmp/b.txt" {
+		t.Fatalf("unexpected X_COOKIES_FILES: %s", cfg.XCookiesFiles)
+	}
+	if cfg.XResolveTryWithoutCookies != false {
+		t.Fatalf("unexpected X_RESOLVE_TRY_WITHOUT_COOKIES: %v", cfg.XResolveTryWithoutCookies)
 	}
 	if cfg.MP3Bitrate != 256 || cfg.MP3OutputTTLMinutes != 120 || cfg.JobRetentionDays != 30 {
 		t.Fatalf("unexpected MP3/job retention overrides: bitrate=%d ttl=%d retention=%d", cfg.MP3Bitrate, cfg.MP3OutputTTLMinutes, cfg.JobRetentionDays)

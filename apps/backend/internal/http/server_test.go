@@ -17,6 +17,7 @@ import (
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/jobs"
 	queuepkg "yt-downloader/backend/internal/queue"
+	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
 )
 
@@ -30,6 +31,20 @@ func (f *fakeResolver) Resolve(_ context.Context, rawURL string) (youtube.Resolv
 	f.inputs = append(f.inputs, rawURL)
 	if f.err != nil {
 		return youtube.ResolveResult{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeXResolver struct {
+	result xresolver.ResolveResult
+	err    error
+	inputs []string
+}
+
+func (f *fakeXResolver) Resolve(_ context.Context, rawURL string) (xresolver.ResolveResult, error) {
+	f.inputs = append(f.inputs, rawURL)
+	if f.err != nil {
+		return xresolver.ResolveResult{}, f.err
 	}
 	return f.result, nil
 }
@@ -132,8 +147,13 @@ func baseTestConfig() config.Config {
 
 func newTestServer(t *testing.T, cfg config.Config, resolver youtubeResolver, queue taskQueue, store jobStore) *Server {
 	t.Helper()
+	return newTestServerWithXResolver(t, cfg, resolver, &fakeXResolver{}, queue, store)
+}
+
+func newTestServerWithXResolver(t *testing.T, cfg config.Config, resolver youtubeResolver, xResolver xMediaResolver, queue taskQueue, store jobStore) *Server {
+	t.Helper()
 	logger := log.New(io.Discard, "", 0)
-	return newServerWithDeps(cfg, logger, resolver, queue, store)
+	return newServerWithDeps(cfg, logger, resolver, xResolver, queue, store)
 }
 
 func decodeJSONMap(t *testing.T, body []byte) map[string]any {
@@ -301,6 +321,66 @@ func TestHandleResolveYouTube(t *testing.T) {
 		}
 		if len(resolver.inputs) != 1 || resolver.inputs[0] != "https://www.youtube.com/watch?v=abc123" {
 			t.Fatalf("resolver should receive input URL, got %#v", resolver.inputs)
+		}
+	})
+}
+
+func TestHandleResolveX(t *testing.T) {
+	t.Run("invalid json", func(t *testing.T) {
+		cfg := baseTestConfig()
+		server := newTestServerWithXResolver(t, cfg, &fakeResolver{}, &fakeXResolver{}, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/x/resolve", bytes.NewBufferString("{"))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("resolver error", func(t *testing.T) {
+		cfg := baseTestConfig()
+		xResolver := &fakeXResolver{err: errors.New("x bad url")}
+		server := newTestServerWithXResolver(t, cfg, &fakeResolver{}, xResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/x/resolve", bytes.NewBufferString(`{"url":"https://x.com/x/status/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "x bad url" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		cfg := baseTestConfig()
+		xResolver := &fakeXResolver{result: xresolver.ResolveResult{Title: "X Video", CookieProfile: "acc-main"}}
+		server := newTestServerWithXResolver(t, cfg, &fakeResolver{}, xResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/x/resolve", bytes.NewBufferString(`{"url":"https://x.com/x/status/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["title"] != "X Video" {
+			t.Fatalf("unexpected response payload: %#v", payload)
+		}
+		if payload["cookie_profile"] != "acc-main" {
+			t.Fatalf("expected cookie_profile acc-main, got %#v", payload["cookie_profile"])
+		}
+		if len(xResolver.inputs) != 1 || xResolver.inputs[0] != "https://x.com/x/status/1" {
+			t.Fatalf("x resolver should receive input URL, got %#v", xResolver.inputs)
 		}
 	})
 }

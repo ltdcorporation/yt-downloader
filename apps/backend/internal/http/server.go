@@ -22,11 +22,16 @@ import (
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/jobs"
 	"yt-downloader/backend/internal/queue"
+	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
 )
 
 type youtubeResolver interface {
 	Resolve(ctx context.Context, rawURL string) (youtube.ResolveResult, error)
+}
+
+type xMediaResolver interface {
+	Resolve(ctx context.Context, rawURL string) (xresolver.ResolveResult, error)
 }
 
 type taskQueue interface {
@@ -43,31 +48,46 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg      config.Config
-	logger   *log.Logger
-	resolver youtubeResolver
-	queue    taskQueue
-	jobStore jobStore
-	origins  map[string]struct{}
-	limiter  *ipRateLimiter
+	cfg       config.Config
+	logger    *log.Logger
+	resolver  youtubeResolver
+	xResolver xMediaResolver
+	queue     taskQueue
+	jobStore  jobStore
+	origins   map[string]struct{}
+	limiter   *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
+	xResolver := xresolver.NewResolver(
+		cfg.YTDLPBinary,
+		cfg.YTDLPJSRuntimes,
+		cfg.XMaxQuality,
+		cfg.MaxFileSizeBytes,
+		cfg.XCookiesDir,
+		cfg.XCookiesFiles,
+		cfg.XResolveTryWithoutCookies,
+	)
+
 	return newServerWithDeps(
 		cfg,
 		logger,
 		resolver,
+		xResolver,
 		asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
 		jobs.NewStore(cfg, logger),
 	)
 }
 
-func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeResolver, queue taskQueue, store jobStore) *Server {
+func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeResolver, xResolver xMediaResolver, queue taskQueue, store jobStore) *Server {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
 	if resolver == nil {
 		panic("resolver is required")
+	}
+	if xResolver == nil {
+		panic("x resolver is required")
 	}
 	if queue == nil {
 		panic("queue is required")
@@ -82,13 +102,14 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 
 	return &Server{
-		cfg:      cfg,
-		logger:   logger,
-		resolver: resolver,
-		queue:    queue,
-		jobStore: store,
-		origins:  parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:  newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:       cfg,
+		logger:    logger,
+		resolver:  resolver,
+		xResolver: xResolver,
+		queue:     queue,
+		jobStore:  store,
+		origins:   parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:   newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 }
 
@@ -115,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Post("/v1/youtube/resolve", s.handleResolveYouTube)
+	r.Post("/v1/x/resolve", s.handleResolveX)
 	r.Post("/v1/jobs/mp3", s.handleCreateMP3Job)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
@@ -147,6 +169,26 @@ func (s *Server) handleResolveYouTube(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := s.resolver.Resolve(r.Context(), req.URL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleResolveX(w http.ResponseWriter, r *http.Request) {
+	var req resolveYouTubeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	result, err := s.xResolver.Resolve(r.Context(), req.URL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
