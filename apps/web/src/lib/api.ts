@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 export async function fetcher<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -40,5 +40,5 @@ export const api = {
   
   // MP4 download
   getMp4DownloadUrl: (url: string, formatId: string) =>
-    `/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${formatId}`,
+    `${API_BASE_URL}/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`,
 };

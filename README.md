@@ -111,6 +111,8 @@ GET  /admin/jobs            (basic auth)
 - MP4 redirects now require `url` + `format_id` (no raw target redirect).
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
+- Frontend calls backend via Next.js proxy route (`/api/*`) by default; set `NEXT_PUBLIC_API_URL=/api` and point web `API_BASE_URL` to internal backend (e.g. `http://127.0.0.1:18080`).
+- API resolves `YTDLP_BINARY` from `PATH` (`yt-dlp` by default), so runtime is not tied to one fixed absolute path.
 - CORS allow-list is controlled by `CORS_ALLOWED_ORIGINS`.
 - Jobs and `job_errors` tables are auto-created on first access.
 

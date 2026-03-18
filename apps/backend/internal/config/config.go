@@ -8,6 +8,7 @@ import (
 type Config struct {
 	AppEnv          string
 	HTTPPort        string
+	HTTPAddr        string
 	YTDLPBinary     string
 	YTDLPJSRuntimes string
 
@@ -40,7 +41,8 @@ func Load() Config {
 	return Config{
 		AppEnv:                  getenv("APP_ENV", "development"),
 		HTTPPort:                getenv("HTTP_PORT", "8080"),
-		YTDLPBinary:             getenv("YTDLP_BINARY", "/usr/local/bin/yt-dlp"),
+		HTTPAddr:                getenv("HTTP_ADDR", ""),
+		YTDLPBinary:             getenv("YTDLP_BINARY", "yt-dlp"),
 		YTDLPJSRuntimes:         getenv("YTDLP_JS_RUNTIMES", "node"),
 		RateLimitRPS:            getenvFloat("RATE_LIMIT_RPS", 3),
 		MaxVideoDurationMinutes: getenvInt("MAX_VIDEO_DURATION_MINUTES", 60),

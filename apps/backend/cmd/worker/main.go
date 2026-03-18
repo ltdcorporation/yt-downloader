@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os/exec"
 
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/jobs"
@@ -13,6 +14,20 @@ import (
 func main() {
 	cfg := config.Load()
 	logger := log.Default()
+
+	resolvedYTDLPBinary, err := exec.LookPath(cfg.YTDLPBinary)
+	if err != nil {
+		logger.Fatalf("yt-dlp binary not found (YTDLP_BINARY=%q): %v", cfg.YTDLPBinary, err)
+	}
+	cfg.YTDLPBinary = resolvedYTDLPBinary
+	logger.Printf("yt-dlp binary resolved: %s", cfg.YTDLPBinary)
+
+	if ffmpegBinary, err := exec.LookPath("ffmpeg"); err != nil {
+		logger.Printf("warning: ffmpeg binary not found in PATH, MP3 conversion may fail: %v", err)
+	} else {
+		logger.Printf("ffmpeg binary resolved: %s", ffmpegBinary)
+	}
+
 	jobStore := jobs.NewStore(cfg, logger)
 	defer func() {
 		if err := jobStore.Close(); err != nil {
