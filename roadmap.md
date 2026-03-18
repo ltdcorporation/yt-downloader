@@ -1,132 +1,145 @@
-# Roadmap Video Downloader (Clean)
+# Roadmap Video Downloader
 
 _Last update: 2026-03-18_
 
-## 1) Tujuan Produk
-
-Bangun web downloader yang **cepat, stabil, dan aman** untuk flow utama:
-1. User paste URL YouTube
-2. System resolve metadata + format
-3. User pilih format
-4. Download berjalan sukses
-
-> Scope aktif saat ini: **YouTube-first (MVP)**.
+> Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 
 ---
 
-## 2) Stack & Arsitektur
+## 1) Frontend Roadmap (Section Atas)
 
-- **Frontend**: Next.js 14 (App Router), Tailwind, Zustand
-- **Backend**: Go + yt-dlp + FFmpeg
-- **Queue**: Redis + Asynq
-- **Data**: PostgreSQL (jobs/errors)
-- **Artifact**: Cloudflare R2 (untuk MP3)
-- **Deploy**: Ubuntu VPS + systemd
+### A. Status Frontend Saat Ini
 
----
-
-## 3) Status Saat Ini (Ringkas)
-
-### ✅ Done
-
-- [x] Runtime backend hardening (`yt-dlp` via PATH + startup validation)
-- [x] Upgrade runtime `yt-dlp` host ke versi terbaru
-- [x] API internal-only bind (`127.0.0.1:18080`)
-- [x] Next.js internal proxy `/api/* -> backend internal`
-- [x] Home flow **real resolve + MP4 download** (Step C)
-- [x] API endpoint MVP sudah tersedia:
-  - `/healthz`
-  - `/v1/youtube/resolve`
-  - `/v1/download/mp4`
-  - `/v1/jobs/mp3`
-  - `/v1/jobs/:id`
-  - `/admin/jobs`
-- [x] Deploy foundation script: `deploy.sh` (pull, build, restart, smoke)
-
-### ⏳ In Progress / Pending
-
-- [ ] Step D: MP3 pipeline end-to-end production
-  - [ ] `ytd-worker.service` aktif permanen
-  - [ ] R2 env real (`R2_ENDPOINT`, key, secret, bucket)
-  - [ ] Smoke test MP3 success path
+- [x] Next.js app + basic pages (`/`, `/history`, `/settings`, `/admin`)
+- [x] Home flow **real** untuk YouTube resolve + MP4 download (Step C)
+- [x] Frontend pakai internal proxy `/api/*` (lebih aman buat publik)
 - [ ] `/history` masih mock data
 - [ ] `/settings` masih mock data
+- [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
 
-### ⚠️ Known Gap
+### B. Milestone FE-1 — Home Core Flow (MVP)
 
-- Worker saat ini belum aktif (service inactive), jadi flow MP3 belum siap produksi penuh.
+**Target:** user paste URL -> lihat opsi -> download MP4 sukses.
 
----
+- [x] Input URL + paste clipboard
+- [x] Call `POST /api/v1/youtube/resolve`
+- [x] Render metadata (title, thumbnail, duration)
+- [x] Render list format MP4
+- [x] Download MP4 via `GET /api/v1/download/mp4`
+- [ ] Tambah UX state yang lebih rapih (retry CTA, inline troubleshooting)
+- [ ] Tambah fallback kalau `window.open` diblok browser (UX copy lebih jelas)
 
-## 4) Prioritas Eksekusi
+### C. Milestone FE-2 — MP3 UX di Home
 
-### Phase 0 — Foundation (DONE)
+**Target:** user bisa request MP3 dari UI, lihat progress, dan unduh saat done.
 
-- [x] Repo + build backend/web stabil
-- [x] Service web/api jalan di user systemd
-- [x] API proxy internal aman untuk publik
-- [x] Deploy script baseline
+- [ ] Tombol/opsi “Convert to MP3” di modal/home
+- [ ] Call `POST /api/v1/jobs/mp3`
+- [ ] Poll `GET /api/v1/jobs/:id`
+- [ ] Status UI: queued -> processing -> done/failed
+- [ ] Tampilkan `download_url` saat done
 
-### Phase 1 — MVP Core (NOW)
+### D. Milestone FE-3 — History (Data Real)
 
-### P1.1 MP3 End-to-End (Step D)
-- [ ] Aktifkan `ytd-worker.service` (enable + restart policy)
-- [ ] Isi config R2 real + validasi upload object
-- [ ] Validasi flow:
-  - [ ] `POST /v1/jobs/mp3` accepted
-  - [ ] status `queued -> processing -> done`
-  - [ ] `download_url` valid
+**Target:** `/history` tidak lagi sample statis.
 
-### P1.2 Data Real di UI
-- [ ] `/history` konsumsi data job real dari backend
-- [ ] state loading/error/empty di history
-- [ ] filter basic (status, date/search)
+- [ ] Ambil data job real dari backend
+- [ ] Loading, empty-state, error-state yang jelas
+- [ ] Filter dasar (status + search)
+- [ ] Aksi relevan (download again untuk job done)
 
-### P1.3 Settings Minimum Useful
-- [ ] Ubah `/settings` dari mock ke preference nyata minimum
+### E. Milestone FE-4 — Settings (Minimum Useful)
+
+**Target:** `/settings` jadi kepake, bukan mock doang.
+
 - [ ] Simpan preference sederhana (localStorage dulu)
+- [ ] Sinkronkan preference dengan behavior UI yang relevan
+- [ ] UX tombol save/discard yang benar-benar ngaruh
 
-### Phase 2 — Hardening Produksi
+### F. Frontend Quality Checklist
 
-- [ ] Tambah observability minimum (log context + failure reason yang actionable)
-- [ ] Smarter smoke (include one resolve + one MP3 test bila env lengkap)
-- [ ] Backup/recovery notes (DB + env + service)
-- [ ] Optional ingress production: domain + HTTPS (non-quick tunnel)
-
-### Phase 3 — Expansion (Setelah MVP Stabil)
-
-- [ ] Trim video YouTube (FFmpeg)
-- [ ] Real-time progress UX (poll/SSE)
-- [ ] Support platform tambahan (TikTok/IG/X) bertahap
+- [ ] Error message human-readable (bukan raw error backend)
+- [ ] State konsisten (loading/disabled/success/error)
+- [ ] Mobile-first tetap enak di viewport kecil
+- [ ] Tidak ada mock data tersisa di flow MVP
 
 ---
 
-## 5) Backlog Fitur (Dirapikan)
+## 2) Backend Roadmap (Section Bawah)
 
-### Near-term (nilai cepat)
-- [ ] Batch download sederhana
-- [ ] Better error messaging (link private/invalid/restricted)
-- [ ] Download retry UX
+### A. Status Backend Saat Ini
 
-### Mid-term
-- [ ] PWA install prompt
-- [ ] QR transfer desktop -> mobile
-- [ ] Subtitle extract / Video to GIF
+- [x] Runtime hardening `yt-dlp` (resolve via PATH + startup validation)
+- [x] Host runtime `yt-dlp` sudah versi terbaru (`/usr/local/bin/yt-dlp`)
+- [x] API bind internal-only `127.0.0.1:18080`
+- [x] Endpoint MVP aktif:
+  - [x] `GET /healthz`
+  - [x] `POST /v1/youtube/resolve`
+  - [x] `GET /v1/download/mp4`
+  - [x] `POST /v1/jobs/mp3`
+  - [x] `GET /v1/jobs/:id`
+  - [x] `GET /admin/jobs`
+- [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
+- [ ] Worker service belum aktif permanen (`ytd-worker.service` inactive)
+- [ ] R2 belum diisi config real
+- [ ] MP3 pipeline belum lolos validasi end-to-end produksi
 
-### Long-term
-- [ ] AI highlights / transcript
-- [ ] Vocal-BGM splitter
-- [ ] Cloud sync (Drive/Dropbox)
-- [ ] Premium/token-gated features
+### B. Milestone BE-1 — Runtime & API Hardening (Done)
+
+- [x] `YTDLP_BINARY` default jadi `yt-dlp` (no hardcoded path tunggal)
+- [x] API/worker fail-fast check binary runtime saat start
+- [x] Proxy web internal sudah siap (`/api/*`)
+- [x] API tetap tidak diekspos publik langsung
+
+### C. Milestone BE-2 — MP3 End-to-End (Next Fokus)
+
+**Target:** flow MP3 benar-benar jalan dari request sampai link download valid.
+
+- [ ] Enable + run `ytd-worker.service` stabil (auto restart)
+- [ ] Isi env R2 real:
+  - [ ] `R2_ENDPOINT`
+  - [ ] `R2_BUCKET`
+  - [ ] `R2_ACCESS_KEY_ID`
+  - [ ] `R2_SECRET_ACCESS_KEY`
+- [ ] Verifikasi flow:
+  - [ ] `POST /v1/jobs/mp3` -> accepted
+  - [ ] job transisi `queued -> processing -> done`
+  - [ ] `download_url` bisa diakses
+- [ ] Tambah smoke test MP3 ke alur deploy (conditional saat env lengkap)
+
+### D. Milestone BE-3 — Deploy & Operasional
+
+- [x] `deploy.sh` pondasi (pull, build, restart, smoke)
+- [ ] Tambah observability minimum (log reason yang actionable)
+- [ ] Tambah runbook backup/recovery (DB + env + service)
+- [ ] Ingress production final (domain + HTTPS) saat siap publik luas
+
+### E. Backend Quality Checklist
+
+- [ ] Semua dependency runtime tervalidasi saat startup
+- [ ] Error backend konsisten & aman ditampilkan ke frontend
+- [ ] Worker tidak silent-fail
+- [ ] Retention/cleanup jobs tetap terkendali
 
 ---
 
-## 6) Definisi "MVP Ready"
+## 3) MVP Ready Gate (Gabungan FE + BE)
 
-MVP dianggap ready jika semua ini true:
+MVP dianggap siap kalau semua checklist ini true:
+
+### Frontend Gate
 - [x] User bisa resolve URL YouTube dari Home
 - [x] User bisa download MP4 dari pilihan format
-- [ ] User bisa generate MP3 sampai dapat link unduh valid
-- [ ] History tampil data real (bukan sample)
-- [x] API tidak terekspos publik langsung (lewat proxy internal)
+- [ ] User bisa request MP3 + lihat progress + unduh hasil
+- [ ] History pakai data real (bukan sample)
+
+### Backend Gate
+- [x] API tidak terekspos publik langsung (internal-only + proxy)
 - [x] Deploy repeatable via script (`deploy.sh`)
+- [ ] Worker aktif stabil
+- [ ] R2 aktif dan MP3 end-to-end lulus test
+
+### Security/Operational Gate
+- [x] Web publik, API private internal
+- [ ] Monitoring + alert minimum tersedia
+- [ ] Dokumen troubleshooting dasar tersedia
