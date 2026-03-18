@@ -8,10 +8,12 @@ BACKEND_ENV_FILE="$ROOT_DIR/apps/backend/.env"
 REMOTE="origin"
 BRANCH="main"
 SCOPE="auto"          # auto | user | system
-WITH_WORKER="false"
+WITH_WORKER="true"
 DO_PULL="true"
 DO_SMOKE="true"
 DRY_RUN="false"
+SMOKE_MP3_URL="${SMOKE_TEST_YOUTUBE_URL:-}"
+AUTO_MP3_SMOKE="true"
 
 usage() {
   cat <<'EOF'
@@ -22,15 +24,19 @@ Options:
   --branch <name>       Git branch (default: main)
   --scope <auto|user|system>
                         Service scope for systemctl (default: auto)
-  --with-worker         Include ytd-worker.service in restart target
+  --with-worker         Include ytd-worker.service in restart target (default)
+  --without-worker      Exclude ytd-worker.service in restart target
+  --smoke-mp3-url <url> Force MP3 smoke flow with specific YouTube URL
+  --no-mp3-smoke        Disable automatic MP3 smoke even if R2 + worker are ready
   --no-pull             Skip git pull step
   --no-smoke            Skip smoke test step
   --dry-run             Print planned commands without executing
   -h, --help            Show this help
 
 Notes:
-  - Default service targets: ytd-api.service ytd-web.service
+  - Default service targets: ytd-api.service ytd-web.service ytd-worker.service
   - Smoke test uses scripts/smoke-mvp.sh against API URL inferred from apps/backend/.env
+  - MP3 smoke runs automatically when R2 env is complete and worker is active (unless disabled)
 EOF
 }
 
@@ -116,6 +122,33 @@ infer_api_base_url() {
   printf 'http://127.0.0.1:%s' "$port"
 }
 
+is_placeholder_value() {
+  local value="${1:-}"
+  value="${value,,}"
+
+  [[ -z "$value" ]] && return 0
+  [[ "$value" == *"<accountid>"* ]] && return 0
+  [[ "$value" == your-* ]] && return 0
+  [[ "$value" == *"your-r2-"* ]] && return 0
+
+  return 1
+}
+
+is_r2_config_ready() {
+  local endpoint bucket access_key secret_key
+  endpoint="$(read_env_value R2_ENDPOINT "$BACKEND_ENV_FILE" "")"
+  bucket="$(read_env_value R2_BUCKET "$BACKEND_ENV_FILE" "")"
+  access_key="$(read_env_value R2_ACCESS_KEY_ID "$BACKEND_ENV_FILE" "")"
+  secret_key="$(read_env_value R2_SECRET_ACCESS_KEY "$BACKEND_ENV_FILE" "")"
+
+  is_placeholder_value "$endpoint" && return 1
+  is_placeholder_value "$bucket" && return 1
+  is_placeholder_value "$access_key" && return 1
+  is_placeholder_value "$secret_key" && return 1
+
+  return 0
+}
+
 service_exists() {
   local scope="$1"
   local service="$2"
@@ -124,6 +157,17 @@ service_exists() {
     systemctl --user cat "$service" >/dev/null 2>&1
   else
     systemctl cat "$service" >/dev/null 2>&1
+  fi
+}
+
+service_is_active() {
+  local scope="$1"
+  local service="$2"
+
+  if [[ "$scope" == "user" ]]; then
+    systemctl --user is-active --quiet "$service"
+  else
+    systemctl is-active --quiet "$service"
   fi
 }
 
@@ -201,15 +245,26 @@ wait_for_api_health() {
 
 run_smoke() {
   local api_base_url="$1"
+  local scope="$2"
 
   [[ -x "$ROOT_DIR/scripts/smoke-mvp.sh" ]] || die "Smoke script not found or not executable: scripts/smoke-mvp.sh"
 
-  local admin_user admin_pass
+  local admin_user admin_pass smoke_url
   admin_user="$(read_env_value ADMIN_BASIC_AUTH_USER "$BACKEND_ENV_FILE" "")"
   admin_pass="$(read_env_value ADMIN_BASIC_AUTH_PASS "$BACKEND_ENV_FILE" "")"
+  smoke_url="$SMOKE_MP3_URL"
+
+  if [[ -z "$smoke_url" && "$AUTO_MP3_SMOKE" == "true" ]]; then
+    if is_r2_config_ready && service_is_active "$scope" "ytd-worker.service"; then
+      smoke_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      log "MP3 smoke auto-enabled (R2 config ready + worker active)"
+    else
+      log "MP3 smoke auto-skip (R2 config incomplete or worker inactive)"
+    fi
+  fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    log "DRY-RUN: API_BASE_URL=$api_base_url ADMIN_BASIC_AUTH_USER=$admin_user scripts/smoke-mvp.sh"
+    log "DRY-RUN: API_BASE_URL=$api_base_url ADMIN_BASIC_AUTH_USER=$admin_user SMOKE_TEST_YOUTUBE_URL=${smoke_url:-<empty>} scripts/smoke-mvp.sh"
     return 0
   fi
 
@@ -217,6 +272,7 @@ run_smoke() {
   API_BASE_URL="$api_base_url" \
   ADMIN_BASIC_AUTH_USER="$admin_user" \
   ADMIN_BASIC_AUTH_PASS="$admin_pass" \
+  SMOKE_TEST_YOUTUBE_URL="$smoke_url" \
     "$ROOT_DIR/scripts/smoke-mvp.sh"
 }
 
@@ -253,6 +309,19 @@ parse_args() {
         ;;
       --with-worker)
         WITH_WORKER="true"
+        shift
+        ;;
+      --without-worker)
+        WITH_WORKER="false"
+        shift
+        ;;
+      --smoke-mp3-url)
+        [[ $# -ge 2 ]] || die "Missing value for --smoke-mp3-url"
+        SMOKE_MP3_URL="$2"
+        shift 2
+        ;;
+      --no-mp3-smoke)
+        AUTO_MP3_SMOKE="false"
         shift
         ;;
       --no-pull)
@@ -298,7 +367,7 @@ main() {
   fi
 
   log "Starting deploy"
-  log "Config: remote=$REMOTE branch=$BRANCH scope=$SCOPE with_worker=$WITH_WORKER pull=$DO_PULL smoke=$DO_SMOKE dry_run=$DRY_RUN"
+  log "Config: remote=$REMOTE branch=$BRANCH scope=$SCOPE with_worker=$WITH_WORKER pull=$DO_PULL smoke=$DO_SMOKE mp3_auto=$AUTO_MP3_SMOKE mp3_url_set=$([[ -n "$SMOKE_MP3_URL" ]] && echo true || echo false) dry_run=$DRY_RUN"
 
   if [[ "$DO_PULL" == "true" ]]; then
     ensure_clean_worktree
@@ -333,7 +402,7 @@ main() {
   wait_for_api_health "$api_base_url" 30 2 || die "API health check failed after restart"
 
   if [[ "$DO_SMOKE" == "true" ]]; then
-    run_smoke "$api_base_url"
+    run_smoke "$api_base_url" "$resolved_scope"
   else
     log "Skipping smoke test step (--no-smoke)"
   fi

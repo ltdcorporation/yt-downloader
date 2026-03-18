@@ -113,6 +113,7 @@ GET  /admin/jobs            (basic auth)
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
 - Frontend calls backend via Next.js proxy route (`/api/*`) by default; set `NEXT_PUBLIC_API_URL=/api` and point web `API_BASE_URL` to internal backend (e.g. `http://127.0.0.1:18080`).
 - API resolves `YTDLP_BINARY` from `PATH` (`yt-dlp` by default), so runtime is not tied to one fixed absolute path.
+- MP3 artifact object key supports prefix via `R2_KEY_PREFIX` (example: `yt-downloader/prod`).
 - CORS allow-list is controlled by `CORS_ALLOWED_ORIGINS`.
 - Jobs and `job_errors` tables are auto-created on first access.
 
@@ -126,4 +127,26 @@ Optional full MP3 flow check:
 
 ```bash
 SMOKE_TEST_YOUTUBE_URL="https://www.youtube.com/watch?v=..." make smoke
+```
+
+## Backend Test (Unit + Redis + Postgres Integration)
+
+Run everything (with preflight Redis/Postgres checks):
+
+```bash
+./scripts/test-backend.sh
+```
+
+Via Makefile:
+
+```bash
+make backend-test
+```
+
+Override test dependencies if needed:
+
+```bash
+YTD_TEST_REDIS_ADDR=127.0.0.1:6382 \
+YTD_TEST_POSTGRES_ADMIN_DSN='postgres://postgres:123987@127.0.0.1:5435/postgres?sslmode=disable' \
+./scripts/test-backend.sh
 ```
