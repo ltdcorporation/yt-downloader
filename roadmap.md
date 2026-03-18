@@ -60,6 +60,18 @@
 
 ## 3. Sprint Development Progress
 
+### ✅ Production Readiness Patch (2026-03-18)
+
+- [x] **Step A — Runtime hardening (yt-dlp):**
+  - Default `YTDLP_BINARY` di backend diubah ke `yt-dlp` (resolve dari `PATH`, bukan hardcoded path tunggal).
+  - API dan worker sekarang fail-fast check `yt-dlp` saat startup (`exec.LookPath`) + log binary path yang kepakai.
+  - Runtime host sudah pakai `yt-dlp` terbaru (`/usr/local/bin/yt-dlp`).
+
+- [x] **Step B — Internal API proxy (Web ↔ API):**
+  - Tambah proxy route Next.js: `apps/web/src/app/api/[...path]/route.ts` untuk forward request `/api/*` ke backend internal.
+  - Frontend client default call ke `NEXT_PUBLIC_API_URL=/api`.
+  - API tetap internal-only (bind localhost), sehingga publik hanya akses web port.
+
 ### 🏃 Sprint 1: Setup & Backend Core Engine (Golang)
 - [ ] `go mod init` dan setup *framework* API (Fiber/Gin).
 - [ ] Buat *wrapper* fungsi `os/exec` untuk mengeksekusi `yt-dlp -j <URL>` dan tangkap output JSON-nya.
