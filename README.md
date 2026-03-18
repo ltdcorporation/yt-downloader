@@ -53,13 +53,39 @@ cd apps/backend
 go run ./cmd/worker
 ```
 
-### 4) Build Backend Binaries (for systemd)
+### 4) Windows: Run All Services (One-Click)
+
+Double-click `start-all.bat` or run from terminal:
+
+```bash
+start-all.bat
+```
+
+This will open 3 separate windows:
+- Backend API (port 8080)
+- Worker (Redis/PostgreSQL consumer)
+- Frontend (port 3000)
+
+### 5) Windows: Run Individual Services
+
+```bash
+# Backend API only
+start-backend.bat
+
+# Worker only
+start-worker.bat
+
+# Frontend only
+start-frontend.bat
+```
+
+### 6) Build Backend Binaries (for systemd)
 
 ```bash
 make backend-build
 ```
 
-### 5) Runtime Dependencies
+### 7) Runtime Dependencies
 
 ```text
 - Redis (required by Asynq queue)
