@@ -1,34 +1,63 @@
 "use client";
 
 import { useState } from "react";
-import { LinkSimpleHorizontal, Clipboard, DownloadSimple } from "@phosphor-icons/react";
+import {
+  LinkSimpleHorizontal,
+  Clipboard,
+  DownloadSimple,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import DownloadModal from "./DownloadModal";
+import { api, type ResolveResponse } from "@/lib/api";
 
 export default function InputBar() {
   const [url, setUrl] = useState("");
+  const [resolvedUrl, setResolvedUrl] = useState("");
+  const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const handleProcess = async (rawInput?: string) => {
+    const targetUrl = (rawInput ?? url).trim();
+    if (!targetUrl || isLoading) {
+      return;
+    }
+
+    setErrorMessage("");
+    setIsLoading(true);
+
+    try {
+      const result = await api.resolve(targetUrl);
+      setResolvedUrl(targetUrl);
+      setResolveResult(result);
+      setIsModalOpen(true);
+    } catch (error) {
+      setResolveResult(null);
+      setIsModalOpen(false);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to resolve video URL.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
       setUrl(text);
-      if (text.trim()) {
-        handleProcess();
-      }
-    } catch (err) {
-      console.error("Failed to paste:", err);
-    }
-  };
 
-  const handleProcess = () => {
-    if (!url.trim()) return;
-    setIsLoading(true);
-    // Simulate loading before opening modal
-    setTimeout(() => {
-      setIsLoading(false);
-      setIsModalOpen(true);
-    }, 1500);
+      if (text.trim()) {
+        await handleProcess(text);
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? `Clipboard access failed: ${error.message}`
+          : "Clipboard access failed.",
+      );
+    }
   };
 
   const handleCloseModal = () => {
@@ -36,18 +65,18 @@ export default function InputBar() {
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUrl(e.target.value);
-  };
+    const nextValue = e.target.value;
+    setUrl(nextValue);
+    setErrorMessage("");
 
-  const handleInputFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    if (e.target.value.trim()) {
-      setIsModalOpen(true);
+    if (resolvedUrl && nextValue.trim() !== resolvedUrl.trim()) {
+      setResolveResult(null);
     }
   };
 
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      handleProcess();
+      void handleProcess();
     }
   };
 
@@ -64,15 +93,14 @@ export default function InputBar() {
             />
             <input
               className="flex-1 bg-transparent border-none focus:ring-0 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 px-4 py-3 text-base md:text-lg"
-              placeholder="Paste your video URL here..."
+              placeholder="Paste your YouTube URL here..."
               type="text"
               value={url}
               onChange={handleInputChange}
-              onFocus={handleInputFocus}
               onKeyDown={handleInputKeyDown}
             />
             <button
-              onClick={handlePaste}
+              onClick={() => void handlePaste()}
               className="flex items-center gap-2 bg-primary text-white px-4 sm:px-6 py-3 rounded-lg font-bold hover:brightness-105 transition-all shadow-md flex-shrink-0"
             >
               <Clipboard size={20} weight="fill" />
@@ -82,29 +110,37 @@ export default function InputBar() {
 
           {/* Process Button - Stacked below input on mobile */}
           <button
-            onClick={handleProcess}
+            onClick={() => void handleProcess()}
             disabled={!url.trim() || isLoading}
             className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? (
               <>
                 <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Processing...</span>
+                <span>Resolving...</span>
               </>
             ) : (
               <>
                 <DownloadSimple size={24} weight="fill" />
-                <span>Download / Process</span>
+                <span>Resolve Download Options</span>
               </>
             )}
           </button>
+
+          {errorMessage ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm flex items-start gap-2">
+              <WarningCircle size={18} className="mt-0.5 flex-shrink-0" />
+              <span>{errorMessage}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
       <DownloadModal
         isOpen={isModalOpen}
         onClose={handleCloseModal}
-        videoUrl={url}
+        sourceUrl={resolvedUrl}
+        result={resolveResult}
         isLoading={isLoading}
       />
     </>
