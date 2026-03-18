@@ -8,6 +8,10 @@ node_modules/
 apps/web/.next/
 apps/web/out/
 apps/web/.vercel/
+apps/web/temp/
+apps/web/error-output.txt
+apps/web/package-lock.json
+apps/web/*.tsbuildinfo
 
 # Go
 bin/
@@ -22,3 +26,15 @@ coverage.out
 # Runtime artifacts
 tmp/
 dist/
+
+# Media output (yt-dlp/ffmpeg)
+*.mp3
+*.mp4
+*.webm
+
+# IDE (optional)
+.vscode/
+.idea/
+
+# Windows batch scripts
+*.bat
