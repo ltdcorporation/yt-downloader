@@ -1,6 +1,10 @@
 package youtube
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
 
 func TestParseCurlOrURL(t *testing.T) {
 	plainURL, plainHeaders, plainUA, err := ParseInput("https://www.youtube.com/watch?v=abc123")
@@ -120,5 +124,51 @@ func TestSelectFormats(t *testing.T) {
 	}
 	if out[1].Type != "mp3" || out[1].ID != "mp3-128" {
 		t.Fatalf("expected mp3 synthetic option, got %+v", out[1])
+	}
+}
+
+func TestChooseThumbnail(t *testing.T) {
+	t.Run("prefer primary thumbnail", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Thumbnail: "https://cdn.example/primary.jpg",
+			Thumbnails: []thumbnail{
+				{URL: "https://cdn.example/fallback1.jpg"},
+				{URL: "https://cdn.example/fallback2.jpg"},
+			},
+		}
+		if got := chooseThumbnail(payload); got != "https://cdn.example/primary.jpg" {
+			t.Fatalf("expected primary thumbnail, got %s", got)
+		}
+	})
+
+	t.Run("fallback to last non-empty thumbnail", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Thumbnails: []thumbnail{
+				{URL: ""},
+				{URL: "https://cdn.example/fallback1.jpg"},
+				{URL: "https://cdn.example/fallback2.jpg"},
+			},
+		}
+		if got := chooseThumbnail(payload); got != "https://cdn.example/fallback2.jpg" {
+			t.Fatalf("expected last fallback thumbnail, got %s", got)
+		}
+	})
+
+	t.Run("empty when none available", func(t *testing.T) {
+		payload := ytdlpOutput{}
+		if got := chooseThumbnail(payload); got != "" {
+			t.Fatalf("expected empty thumbnail, got %q", got)
+		}
+	})
+}
+
+func TestResolveRequiresYTDLPBinary(t *testing.T) {
+	resolver := NewResolver("", "node", 60, 1080, 0)
+	_, err := resolver.Resolve(context.Background(), "https://www.youtube.com/watch?v=abc123")
+	if err == nil {
+		t.Fatal("expected error when yt-dlp binary is missing")
+	}
+	if !strings.Contains(err.Error(), "yt-dlp binary is not configured") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
