@@ -17,6 +17,7 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
 - [ ] `/settings` masih mock data
 - [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
 - [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
+- [ ] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
@@ -61,9 +62,14 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
 
 **Target:** user paste link X/Twitter -> resolve -> pilih kualitas -> download MP4.
 
+**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow X masih **belum dikerjakan**.
+
 - [ ] Tambah source mode (YouTube / X) di UI home
 - [ ] Call `POST /api/v1/x/resolve` saat mode X aktif
 - [ ] Render metadata + format list dari response resolver X
+- [ ] Tambah UI picker kualitas MP4 khusus X (list/card per format + size jika tersedia)
+- [ ] Tambah CTA download MP4 per kualitas hasil resolver X
+- [ ] Samakan UX pola pemilihan kualitas X agar konsisten dengan flow YouTube
 - [ ] Error UX spesifik X (live ditolak, format tidak tersedia, restricted media)
 - [ ] Logging event ringan buat success/fail resolve X
 
@@ -180,7 +186,7 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa download MP4 dari pilihan format
 - [ ] User bisa request MP3 + lihat progress + unduh hasil
 - [ ] History pakai data real (bukan sample)
-- [ ] User bisa resolve + download dari link X via UI
+- [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
@@ -223,3 +229,4 @@ MVP dianggap siap kalau semua checklist ini true:
 
 - [ ] Belum semua post X selalu punya direct MP4 (sebagian HLS-only)
 - [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini
+- [ ] UI frontend untuk resolve X + picker kualitas download masih backlog (belum implementasi)
