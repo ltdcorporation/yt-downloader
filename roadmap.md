@@ -112,12 +112,14 @@ _Last update: 2026-03-18_
 ### D. Milestone BE-3 — Deploy & Operasional
 
 - [x] `deploy.sh` pondasi (pull, build, restart, smoke)
+- [x] `scripts/test-backend.sh` full backend suite (unit + Redis + Postgres integration, dengan preflight dependency check)
 - [ ] Tambah observability minimum (log reason yang actionable)
 - [ ] Tambah runbook backup/recovery (DB + env + service)
 - [ ] Ingress production final (domain + HTTPS) saat siap publik luas
 
 ### E. Backend Quality Checklist
 
+- [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
 - [ ] Worker tidak silent-fail
