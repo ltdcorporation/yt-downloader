@@ -19,6 +19,9 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 - [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
 - [ ] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
 - [ ] UX warning khusus untuk kasus X **HLS-only (by design belum didukung)** belum ada di FE
+- [ ] Home flow Instagram resolve belum ada di UI (backend sudah siap)
+- [ ] UI **pilih kualitas download MP4 untuk Instagram** belum dikerjakan (status FE: belum implementasi)
+- [ ] UX warning khusus untuk kasus Instagram **HLS-only (by design belum didukung)** belum ada di FE
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
@@ -76,7 +79,23 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 - [ ] Tampilkan state “belum support HLS-only” + CTA fallback (mis. coba link lain) saat code tersebut muncul
 - [ ] Logging event ringan buat success/fail resolve X
 
-### G. Frontend Quality Checklist
+### G. Milestone FE-6 — Instagram Flow di Home (Next)
+
+**Target:** user paste link Instagram -> resolve -> pilih kualitas -> download MP4.
+
+**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow Instagram masih **belum dikerjakan**.
+
+- [ ] Tambah source mode (YouTube / X / Instagram) di UI home
+- [ ] Call `POST /api/v1/instagram/resolve` saat mode Instagram aktif
+- [ ] Render metadata + format list dari response resolver Instagram
+- [ ] Tambah UI picker kualitas MP4 khusus Instagram (list/card per format + size jika tersedia)
+- [ ] Tambah CTA download MP4 per kualitas hasil resolver Instagram
+- [ ] Samakan UX pola pemilihan kualitas Instagram agar konsisten dengan flow YouTube/X
+- [ ] Handle backend error code `ig_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
+- [ ] Tampilkan state “belum support HLS-only” + CTA fallback saat code tersebut muncul
+- [ ] Logging event ringan buat success/fail resolve Instagram
+
+### H. Frontend Quality Checklist
 
 - [ ] Error message human-readable (bukan raw error backend)
 - [ ] State konsisten (loading/disabled/success/error)
@@ -218,7 +237,8 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] User bisa request MP3 + lihat progress + unduh hasil
 - [ ] History pakai data real (bukan sample)
 - [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
-- [ ] Saat dapat error code HLS-only, UI menampilkan warning terarah (by design belum support)
+- [ ] User bisa resolve + **pilih kualitas** + download dari link Instagram via UI
+- [ ] Saat dapat error code HLS-only (`x_hls_only_not_supported` / `ig_hls_only_not_supported`), UI menampilkan warning terarah (by design belum support)
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
