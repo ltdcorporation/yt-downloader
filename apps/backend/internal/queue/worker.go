@@ -17,7 +17,6 @@ import (
 
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/jobs"
-	"yt-downloader/backend/internal/storage"
 )
 
 const TaskConvertMP3 = "mp3:convert"
@@ -31,14 +30,27 @@ type ConvertMP3Payload struct {
 	BitrateKbps int               `json:"bitrate_kbps"`
 }
 
+type jobStoreUpdater interface {
+	Update(ctx context.Context, jobID string, mutate func(*jobs.Record)) (jobs.Record, error)
+}
+
+type r2Storage interface {
+	UploadFile(ctx context.Context, key string, localPath string) error
+	PresignDownloadURL(ctx context.Context, key string, expiresIn time.Duration) (string, time.Time, error)
+}
+
 type Worker struct {
 	cfg      config.Config
 	logger   *log.Logger
-	jobStore *jobs.Store
-	r2       *storage.R2Client
+	jobStore jobStoreUpdater
+	r2       r2Storage
 }
 
-func NewWorker(cfg config.Config, logger *log.Logger, jobStore *jobs.Store, r2 *storage.R2Client) *Worker {
+func NewWorker(cfg config.Config, logger *log.Logger, jobStore jobStoreUpdater, r2 r2Storage) *Worker {
+	if logger == nil {
+		logger = log.Default()
+	}
+
 	return &Worker{
 		cfg:      cfg,
 		logger:   logger,
