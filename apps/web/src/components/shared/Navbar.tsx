@@ -3,9 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { TrayArrowDown, List } from "@phosphor-icons/react";
+import LoginModal from "./LoginModal";
+import SignupModal from "./SignupModal";
 
 export default function Navbar() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
 
   return (
     <>
@@ -41,10 +45,16 @@ export default function Navbar() {
 
         {/* Desktop Buttons */}
         <div className="hidden md:flex gap-3">
-          <button className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all">
+          <button
+            onClick={() => setIsLoginModalOpen(true)}
+            className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
+          >
             Login
           </button>
-          <button className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all">
+          <button
+            onClick={() => setIsSignupModalOpen(true)}
+            className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all"
+          >
             Sign Up
           </button>
         </div>
@@ -113,10 +123,22 @@ export default function Navbar() {
 
               {/* Drawer Footer Buttons */}
               <div className="px-6 py-6 border-t border-primary/10 space-y-3">
-                <button className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all">
+                <button
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    setIsLoginModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all"
+                >
                   Login
                 </button>
-                <button className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all">
+                <button
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    setIsSignupModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all"
+                >
                   Sign Up
                 </button>
               </div>
@@ -124,6 +146,12 @@ export default function Navbar() {
           </div>
         </>
       )}
+
+      {/* Login Modal */}
+      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
+
+      {/* Signup Modal */}
+      <SignupModal isOpen={isSignupModalOpen} onClose={() => setIsSignupModalOpen(false)} />
     </>
   );
 }
