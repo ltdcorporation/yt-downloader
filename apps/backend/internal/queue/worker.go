@@ -39,11 +39,17 @@ type r2Storage interface {
 	PresignDownloadURL(ctx context.Context, key string, expiresIn time.Duration) (string, time.Time, error)
 }
 
+type asynqServerRunner interface {
+	Run(handler asynq.Handler) error
+}
+
 type Worker struct {
-	cfg      config.Config
-	logger   *log.Logger
-	jobStore jobStoreUpdater
-	r2       r2Storage
+	cfg           config.Config
+	logger        *log.Logger
+	jobStore      jobStoreUpdater
+	r2            r2Storage
+	serverFactory func(redisOpt asynq.RedisClientOpt, cfg asynq.Config) asynqServerRunner
+	mkTempDir     func(dir, pattern string) (string, error)
 }
 
 func NewWorker(cfg config.Config, logger *log.Logger, jobStore jobStoreUpdater, r2 r2Storage) *Worker {
@@ -56,11 +62,22 @@ func NewWorker(cfg config.Config, logger *log.Logger, jobStore jobStoreUpdater, 
 		logger:   logger,
 		jobStore: jobStore,
 		r2:       r2,
+		serverFactory: func(redisOpt asynq.RedisClientOpt, cfg asynq.Config) asynqServerRunner {
+			return asynq.NewServer(redisOpt, cfg)
+		},
+		mkTempDir: os.MkdirTemp,
 	}
 }
 
 func (w *Worker) Run(_ context.Context) error {
-	server := asynq.NewServer(
+	factory := w.serverFactory
+	if factory == nil {
+		factory = func(redisOpt asynq.RedisClientOpt, cfg asynq.Config) asynqServerRunner {
+			return asynq.NewServer(redisOpt, cfg)
+		}
+	}
+
+	server := factory(
 		asynq.RedisClientOpt{
 			Addr:     w.cfg.RedisAddr,
 			Password: w.cfg.RedisPassword,
@@ -156,7 +173,12 @@ func (w *Worker) convertMP3(ctx context.Context, payload ConvertMP3Payload) (str
 		return "", nil, errors.New("yt-dlp binary is not configured")
 	}
 
-	tempDir, err := os.MkdirTemp("", "ytd-mp3-"+payload.JobID+"-")
+	mkTempDir := w.mkTempDir
+	if mkTempDir == nil {
+		mkTempDir = os.MkdirTemp
+	}
+
+	tempDir, err := mkTempDir("", "ytd-mp3-"+payload.JobID+"-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create temp dir: %w", err)
 	}
