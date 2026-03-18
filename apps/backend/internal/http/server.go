@@ -141,7 +141,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := "job_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	outputKey := "mp3/" + jobID + ".mp3"
+	outputKey := buildMP3OutputKey(s.cfg.R2KeyPrefix, jobID)
 	now := time.Now().UTC()
 
 	record := jobs.Record{
@@ -381,6 +381,21 @@ func (l *ipRateLimiter) cleanupEvery(interval time.Duration) {
 		}
 		l.mu.Unlock()
 	}
+}
+
+func buildMP3OutputKey(prefix, jobID string) string {
+	cleanJobID := strings.TrimSpace(jobID)
+	if cleanJobID == "" {
+		cleanJobID = "unknown"
+	}
+
+	segments := make([]string, 0, 3)
+	if trimmedPrefix := strings.Trim(prefix, " /"); trimmedPrefix != "" {
+		segments = append(segments, trimmedPrefix)
+	}
+	segments = append(segments, "mp3", cleanJobID+".mp3")
+
+	return strings.Join(segments, "/")
 }
 
 func parseAllowedOrigins(raw string) map[string]struct{} {
