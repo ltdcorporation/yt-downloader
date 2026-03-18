@@ -1,8 +1,10 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"math"
 	"net"
@@ -23,17 +25,57 @@ import (
 	"yt-downloader/backend/internal/youtube"
 )
 
+type youtubeResolver interface {
+	Resolve(ctx context.Context, rawURL string) (youtube.ResolveResult, error)
+}
+
+type taskQueue interface {
+	Enqueue(task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+	Close() error
+}
+
+type jobStore interface {
+	Close() error
+	Put(ctx context.Context, record jobs.Record) error
+	Get(ctx context.Context, jobID string) (jobs.Record, error)
+	Update(ctx context.Context, jobID string, mutate func(*jobs.Record)) (jobs.Record, error)
+	ListRecent(ctx context.Context, limit int) ([]jobs.Record, error)
+}
+
 type Server struct {
 	cfg      config.Config
 	logger   *log.Logger
-	resolver *youtube.Resolver
-	queue    *asynq.Client
-	jobStore *jobs.Store
+	resolver youtubeResolver
+	queue    taskQueue
+	jobStore jobStore
 	origins  map[string]struct{}
 	limiter  *ipRateLimiter
 }
 
-func NewServer(cfg config.Config, logger *log.Logger, resolver *youtube.Resolver) *Server {
+func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
+	return newServerWithDeps(
+		cfg,
+		logger,
+		resolver,
+		asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
+		jobs.NewStore(cfg, logger),
+	)
+}
+
+func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeResolver, queue taskQueue, store jobStore) *Server {
+	if logger == nil {
+		logger = log.New(io.Discard, "", 0)
+	}
+	if resolver == nil {
+		panic("resolver is required")
+	}
+	if queue == nil {
+		panic("queue is required")
+	}
+	if store == nil {
+		panic("job store is required")
+	}
+
 	burst := int(math.Ceil(cfg.RateLimitRPS))
 	if burst < 1 {
 		burst = 1
@@ -43,8 +85,8 @@ func NewServer(cfg config.Config, logger *log.Logger, resolver *youtube.Resolver
 		cfg:      cfg,
 		logger:   logger,
 		resolver: resolver,
-		queue:    asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
-		jobStore: jobs.NewStore(cfg, logger),
+		queue:    queue,
+		jobStore: store,
 		origins:  parseAllowedOrigins(cfg.CORSAllowedOrigins),
 		limiter:  newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
