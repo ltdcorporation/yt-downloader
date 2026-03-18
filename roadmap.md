@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-18_
+_Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 
@@ -16,6 +16,7 @@ _Last update: 2026-03-18_
 - [ ] `/history` masih mock data
 - [ ] `/settings` masih mock data
 - [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
+- [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
@@ -56,7 +57,17 @@ _Last update: 2026-03-18_
 - [ ] Sinkronkan preference dengan behavior UI yang relevan
 - [ ] UX tombol save/discard yang benar-benar ngaruh
 
-### F. Frontend Quality Checklist
+### F. Milestone FE-5 — X/Twitter Flow di Home (Next)
+
+**Target:** user paste link X/Twitter -> resolve -> pilih kualitas -> download MP4.
+
+- [ ] Tambah source mode (YouTube / X) di UI home
+- [ ] Call `POST /api/v1/x/resolve` saat mode X aktif
+- [ ] Render metadata + format list dari response resolver X
+- [ ] Error UX spesifik X (live ditolak, format tidak tersedia, restricted media)
+- [ ] Logging event ringan buat success/fail resolve X
+
+### G. Frontend Quality Checklist
 
 - [ ] Error message human-readable (bukan raw error backend)
 - [ ] State konsisten (loading/disabled/success/error)
@@ -75,6 +86,7 @@ _Last update: 2026-03-18_
 - [x] Endpoint MVP aktif:
   - [x] `GET /healthz`
   - [x] `POST /v1/youtube/resolve`
+  - [x] `POST /v1/x/resolve`
   - [x] `GET /v1/download/mp4`
   - [x] `POST /v1/jobs/mp3`
   - [x] `GET /v1/jobs/:id`
@@ -84,6 +96,15 @@ _Last update: 2026-03-18_
 - [x] R2 sudah diisi config real
 - [x] Prefix object storage configurable via `R2_KEY_PREFIX` (aktif: `yt-downloader/prod`)
 - [x] MP3 pipeline sudah lolos validasi end-to-end produksi
+- [x] Resolver X/Twitter aktif untuk URL status (`/{user}/status/{id}` + `/i/status/{id}`)
+- [x] Multi-cookie fallback aktif untuk resolver X (rotasi akun sampai resolve sukses)
+- [x] Env runtime X resolver sudah aktif:
+  - [x] `X_MAX_QUALITY`
+  - [x] `X_COOKIES_DIR`
+  - [x] `X_COOKIES_FILES`
+  - [x] `X_RESOLVE_TRY_WITHOUT_COOKIES`
+- [x] Cookie account X diekstrak dari `automation/postx/runtime/chromium-profiles` ke runtime `yt-downloader/runtime/x-cookies` (8 profile)
+- [x] Patch selector format X sudah masuk: fallback direct `http-*` MP4 untuk kasus metadata codec kosong (false-negative fix)
 
 ### B. Milestone BE-1 — Runtime & API Hardening (Done)
 
@@ -117,13 +138,36 @@ _Last update: 2026-03-18_
 - [ ] Tambah runbook backup/recovery (DB + env + service)
 - [ ] Ingress production final (domain + HTTPS) saat siap publik luas
 
-### E. Backend Quality Checklist
+### E. Milestone BE-4 — X Resolver + Multi-Cookies (Done, Hardening Lanjut)
+
+**Target:** resolve link X/Twitter non-live secara stabil, termasuk konten yang butuh sesi akun.
+
+- [x] Tambah endpoint `POST /v1/x/resolve`
+- [x] Validasi host/path X/Twitter yang didukung
+- [x] Rotasi cookie profile dari file list + directory scan
+- [x] Response menyertakan `cookie_profile` yang berhasil dipakai
+- [x] Policy explicit: live content ditolak
+- [x] Fix false-negative selector format:
+  - [x] progressive MP4 tetap prioritas
+  - [x] direct `http-*` MP4 diterima sebagai fallback saat metadata codec kosong
+- [x] Hardening test:
+  - [x] edge cases resolver + endpoint
+  - [x] coverage `internal/xresolver` stabil di ~95%
+- [x] Deploy runtime + smoke pass setelah patch
+- [ ] Next hardening (belum):
+  - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post yang tidak punya direct MP4
+  - [ ] ranking cookie profile berdasarkan success-rate
+
+### F. Backend Quality Checklist
 
 - [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
+- [x] Resolver X multi-cookie aktif + tervalidasi real-link
+- [x] False-negative direct `http-*` MP4 sudah dipatch
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
 - [ ] Worker tidak silent-fail
 - [ ] Retention/cleanup jobs tetap terkendali
+- [ ] Fallback untuk varian HLS-only post X
 
 ---
 
@@ -136,14 +180,46 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa download MP4 dari pilihan format
 - [ ] User bisa request MP3 + lihat progress + unduh hasil
 - [ ] History pakai data real (bukan sample)
+- [ ] User bisa resolve + download dari link X via UI
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
 - [x] Deploy repeatable via script (`deploy.sh`)
 - [x] Worker aktif stabil
 - [x] R2 aktif dan MP3 end-to-end lulus test
+- [x] User bisa resolve X/Twitter non-live via `POST /v1/x/resolve`
+- [ ] Semua varian post video X (termasuk HLS-only) 100% covered
 
 ### Security/Operational Gate
 - [x] Web publik, API private internal
 - [ ] Monitoring + alert minimum tersedia
 - [ ] Dokumen troubleshooting dasar tersedia
+
+---
+
+## 4) Delivery Notes — Implementasi Fitur X (2026-03-18)
+
+### A. Scope yang dikerjakan
+
+- [x] Backend resolver X/Twitter dengan endpoint baru `POST /v1/x/resolve`
+- [x] Multi-account cookie support untuk bypass lock konten tertentu
+- [x] Integrasi env runtime + deploy + validasi real link
+
+### B. Jalur pengerjaan
+
+- [x] Patch code di repo **workspace**
+- [x] Hardening test + coverage
+- [x] Push ke `main`
+- [x] Deploy dari repo **runtime** (`/home/ubuntu/yt-downloader`) via `./deploy.sh`
+
+### C. Hasil validasi lapangan
+
+- [x] Sukses di beberapa link real (contoh SpaceX/Reuters/CGTN)
+- [x] Error handling jelas untuk live content
+- [x] Issue utama yang ketemu: format direct MP4 dengan codec metadata kosong
+- [x] Status issue utama: **fixed** (fallback selector `http-*` MP4)
+
+### D. Catatan batasan saat ini
+
+- [ ] Belum semua post X selalu punya direct MP4 (sebagian HLS-only)
+- [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini
