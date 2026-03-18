@@ -18,6 +18,7 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
 - [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
 - [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
 - [ ] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
+- [ ] UX warning khusus untuk kasus X **HLS-only (by design belum didukung)** belum ada di FE
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
@@ -71,6 +72,8 @@ _Last update: 2026-03-18 (X resolver + multi-cookie rollout)_
 - [ ] Tambah CTA download MP4 per kualitas hasil resolver X
 - [ ] Samakan UX pola pemilihan kualitas X agar konsisten dengan flow YouTube
 - [ ] Error UX spesifik X (live ditolak, format tidak tersedia, restricted media)
+- [ ] Handle backend error code `x_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
+- [ ] Tampilkan state “belum support HLS-only” + CTA fallback (mis. coba link lain) saat code tersebut muncul
 - [ ] Logging event ringan buat success/fail resolve X
 
 ### G. Frontend Quality Checklist
@@ -187,6 +190,7 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] User bisa request MP3 + lihat progress + unduh hasil
 - [ ] History pakai data real (bukan sample)
 - [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
+- [ ] Saat dapat error code HLS-only, UI menampilkan warning terarah (by design belum support)
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
@@ -228,5 +232,6 @@ MVP dianggap siap kalau semua checklist ini true:
 ### D. Catatan batasan saat ini
 
 - [ ] Belum semua post X selalu punya direct MP4 (sebagian HLS-only)
-- [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini
+- [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini (by design: belum dikerjakan)
 - [ ] UI frontend untuk resolve X + picker kualitas download masih backlog (belum implementasi)
+- [ ] UI frontend belum map code `x_hls_only_not_supported` ke warning yang user-friendly
