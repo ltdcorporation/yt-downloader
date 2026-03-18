@@ -80,9 +80,9 @@ _Last update: 2026-03-18_
   - [x] `GET /v1/jobs/:id`
   - [x] `GET /admin/jobs`
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
-- [ ] Worker service belum aktif permanen (`ytd-worker.service` inactive)
-- [ ] R2 belum diisi config real
-- [ ] MP3 pipeline belum lolos validasi end-to-end produksi
+- [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
+- [x] R2 sudah diisi config real
+- [x] MP3 pipeline sudah lolos validasi end-to-end produksi
 
 ### B. Milestone BE-1 — Runtime & API Hardening (Done)
 
@@ -91,21 +91,21 @@ _Last update: 2026-03-18_
 - [x] Proxy web internal sudah siap (`/api/*`)
 - [x] API tetap tidak diekspos publik langsung
 
-### C. Milestone BE-2 — MP3 End-to-End (Next Fokus)
+### C. Milestone BE-2 — MP3 End-to-End (Done)
 
 **Target:** flow MP3 benar-benar jalan dari request sampai link download valid.
 
-- [ ] Enable + run `ytd-worker.service` stabil (auto restart)
-- [ ] Isi env R2 real:
-  - [ ] `R2_ENDPOINT`
-  - [ ] `R2_BUCKET`
-  - [ ] `R2_ACCESS_KEY_ID`
-  - [ ] `R2_SECRET_ACCESS_KEY`
-- [ ] Verifikasi flow:
-  - [ ] `POST /v1/jobs/mp3` -> accepted
-  - [ ] job transisi `queued -> processing -> done`
-  - [ ] `download_url` bisa diakses
-- [ ] Tambah smoke test MP3 ke alur deploy (conditional saat env lengkap)
+- [x] Enable + run `ytd-worker.service` stabil (auto restart)
+- [x] Isi env R2 real:
+  - [x] `R2_ENDPOINT`
+  - [x] `R2_BUCKET`
+  - [x] `R2_ACCESS_KEY_ID`
+  - [x] `R2_SECRET_ACCESS_KEY`
+- [x] Verifikasi flow:
+  - [x] `POST /v1/jobs/mp3` -> accepted
+  - [x] job transisi `queued -> processing -> done`
+  - [x] `download_url` bisa diakses
+- [x] Tambah smoke test MP3 ke alur deploy (conditional saat env lengkap)
 
 ### D. Milestone BE-3 — Deploy & Operasional
 
@@ -136,8 +136,8 @@ MVP dianggap siap kalau semua checklist ini true:
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
 - [x] Deploy repeatable via script (`deploy.sh`)
-- [ ] Worker aktif stabil
-- [ ] R2 aktif dan MP3 end-to-end lulus test
+- [x] Worker aktif stabil
+- [x] R2 aktif dan MP3 end-to-end lulus test
 
 ### Security/Operational Gate
 - [x] Web publik, API private internal
