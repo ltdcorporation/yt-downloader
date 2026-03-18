@@ -360,3 +360,302 @@ func TestResolve_WithCurlInput(t *testing.T) {
 		t.Fatalf("unexpected title: %s", result.Title)
 	}
 }
+
+func TestNewResolver_DefaultAndExplicitQuality(t *testing.T) {
+	fallback := NewResolver("yt-dlp", "  node  ", 0, 777, "  /tmp/x-cookies  ", "  /tmp/a.txt,/tmp/b.txt  ", true)
+	if fallback.maxQuality != 1080 {
+		t.Fatalf("expected fallback maxQuality=1080, got %d", fallback.maxQuality)
+	}
+	if fallback.ytdlpJSRuntimes != "node" {
+		t.Fatalf("expected trimmed js runtime, got %q", fallback.ytdlpJSRuntimes)
+	}
+	if fallback.cookiesDir != "/tmp/x-cookies" {
+		t.Fatalf("expected trimmed cookiesDir, got %q", fallback.cookiesDir)
+	}
+	if fallback.cookiesFiles != "/tmp/a.txt,/tmp/b.txt" {
+		t.Fatalf("expected trimmed cookiesFiles, got %q", fallback.cookiesFiles)
+	}
+	if fallback.maxFileSizeBytes != 777 {
+		t.Fatalf("unexpected maxFileSizeBytes: %d", fallback.maxFileSizeBytes)
+	}
+	if fallback.tryWithoutCookieFile != true {
+		t.Fatalf("expected tryWithoutCookieFile=true")
+	}
+
+	explicit := NewResolver("yt-dlp", "", 720, 0, "", "", false)
+	if explicit.maxQuality != 720 {
+		t.Fatalf("expected explicit maxQuality=720, got %d", explicit.maxQuality)
+	}
+	if explicit.tryWithoutCookieFile != false {
+		t.Fatalf("expected tryWithoutCookieFile=false")
+	}
+}
+
+func TestResolve_EarlyValidationErrors(t *testing.T) {
+	t.Run("requires ytdlp binary", func(t *testing.T) {
+		resolver := NewResolver("", "", 1080, 0, "", "", true)
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err == nil || !strings.Contains(err.Error(), "yt-dlp binary is not configured") {
+			t.Fatalf("expected ytdlp binary error, got %v", err)
+		}
+	})
+
+	t.Run("parse input error", func(t *testing.T) {
+		resolver := NewResolver("yt-dlp", "", 1080, 0, "", "", true)
+		_, err := resolver.Resolve(context.Background(), `curl "https://x.com/user/status/1`)
+		if err == nil || !strings.Contains(err.Error(), "failed to parse cURL input") {
+			t.Fatalf("expected parse input error, got %v", err)
+		}
+	})
+
+	t.Run("invalid host", func(t *testing.T) {
+		resolver := NewResolver("yt-dlp", "", 1080, 0, "", "", true)
+		_, err := resolver.Resolve(context.Background(), "https://example.com/user/status/1")
+		if err == nil || !strings.Contains(err.Error(), "URL must be an X/Twitter link") {
+			t.Fatalf("expected x host validation error, got %v", err)
+		}
+	})
+}
+
+func TestResolve_FailureWrappingByCandidateCount(t *testing.T) {
+	t.Run("single candidate returns direct error", func(t *testing.T) {
+		cookieFile := filepath.Join(t.TempDir(), "acc-single.txt")
+		if err := os.WriteFile(cookieFile, []byte("# cookie"), 0o600); err != nil {
+			t.Fatalf("failed to write cookie file: %v", err)
+		}
+
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{
+			Stdout:   "{}",
+			Stderr:   "geo blocked",
+			ExitCode: 1,
+		})
+
+		resolver := NewResolver(script, "", 1080, 0, "", cookieFile, false)
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/123")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), `cookie profile "acc-single" failed: geo blocked`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if strings.Contains(err.Error(), "failed to resolve X URL with") {
+			t.Fatalf("single candidate should not be wrapped with aggregate message: %v", err)
+		}
+	})
+
+	t.Run("multiple candidates returns aggregate error", func(t *testing.T) {
+		dir := t.TempDir()
+		fileA := filepath.Join(dir, "acc-a.txt")
+		fileB := filepath.Join(dir, "acc-b.txt")
+		if err := os.WriteFile(fileA, []byte("# a"), 0o600); err != nil {
+			t.Fatalf("failed to write fileA: %v", err)
+		}
+		if err := os.WriteFile(fileB, []byte("# b"), 0o600); err != nil {
+			t.Fatalf("failed to write fileB: %v", err)
+		}
+
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{
+			Stdout:   "{}",
+			Stderr:   "sensitive media locked",
+			ExitCode: 1,
+		})
+
+		resolver := NewResolver(script, "", 1080, 0, "", fileA+","+fileB, false)
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/123")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "failed to resolve X URL with 2 cookie profiles") {
+			t.Fatalf("expected aggregate error, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "sensitive media locked") {
+			t.Fatalf("expected root failure reason in aggregate error, got %v", err)
+		}
+	})
+}
+
+func TestResolve_ResponseEdgeCases(t *testing.T) {
+	t.Run("invalid json response", func(t *testing.T) {
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{
+			Stdout:   "not-json",
+			ExitCode: 0,
+		})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err == nil || !strings.Contains(err.Error(), "yt-dlp response is invalid") {
+			t.Fatalf("expected invalid json error, got %v", err)
+		}
+	})
+
+	t.Run("live content rejected", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title:      "Live Post",
+			IsLive:     true,
+			LiveStatus: "is_live",
+			Formats: []ytdlpFormat{
+				progressiveFormat("18", 360, "https://video-cdn.example/18.mp4", 100),
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err == nil || !strings.Contains(err.Error(), "live content is not supported") {
+			t.Fatalf("expected live content error, got %v", err)
+		}
+	})
+
+	t.Run("no downloadable format", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title: "No Progressive",
+			Formats: []ytdlpFormat{
+				{FormatID: "137", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", URL: "https://video-cdn.example/137.mp4", Height: 1080},
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		_, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err == nil || !strings.Contains(err.Error(), "no downloadable MP4 format is available") {
+			t.Fatalf("expected no format error, got %v", err)
+		}
+	})
+
+	t.Run("negative duration clamped to zero + thumbnail fallback", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title:     "Duration Clamp",
+			Duration:  -4.8,
+			Thumbnail: "",
+			Thumbnails: []thumbnail{
+				{URL: ""},
+				{URL: "https://img.example/first.jpg"},
+				{URL: "https://img.example/final.jpg"},
+			},
+			Formats: []ytdlpFormat{
+				progressiveFormat("22", 720, "https://video-cdn.example/22.mp4", 999),
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 1080, 0, "", "", true)
+
+		result, err := resolver.Resolve(context.Background(), "https://x.com/user/status/1")
+		if err != nil {
+			t.Fatalf("expected success, got %v", err)
+		}
+		if result.DurationSeconds != 0 {
+			t.Fatalf("expected clamped duration 0, got %d", result.DurationSeconds)
+		}
+		if result.Thumbnail != "https://img.example/final.jpg" {
+			t.Fatalf("unexpected thumbnail fallback: %s", result.Thumbnail)
+		}
+	})
+}
+
+func TestSelectFormats_BestByHeightAndLimits(t *testing.T) {
+	resolver := NewResolver("yt-dlp", "", 720, 500, "", "", true)
+
+	formats := resolver.selectFormats([]ytdlpFormat{
+		progressiveFormat("360-low", 360, "https://video-cdn.example/360-low.mp4", 300),
+		progressiveFormat("360-high", 360, "https://video-cdn.example/360-high.mp4", 350),
+		progressiveFormat("480-too-big", 480, "https://video-cdn.example/480.mp4", 600),
+		{FormatID: "720-approx", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "mp4a", URL: "https://video-cdn.example/720.mp4", Height: 720, Filesize: 0, FilesizeApprox: 450},
+		progressiveFormat("1080-over", 1080, "https://video-cdn.example/1080.mp4", 400),
+	})
+
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 formats, got %d (%#v)", len(formats), formats)
+	}
+	if formats[0].ID != "360-high" || formats[1].ID != "720-approx" {
+		t.Fatalf("unexpected format ordering/content: %#v", formats)
+	}
+	if formats[1].Filesize != 450 {
+		t.Fatalf("expected filesize from filesize_approx, got %d", formats[1].Filesize)
+	}
+}
+
+func TestIsProgressiveMP4(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ytdlpFormat
+		want bool
+	}{
+		{
+			name: "valid progressive",
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "mp4a"},
+			want: true,
+		},
+		{
+			name: "invalid ext",
+			in:   ytdlpFormat{Ext: "webm", VideoCodec: "vp9", AudioCodec: "opus"},
+			want: false,
+		},
+		{
+			name: "missing video",
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "", AudioCodec: "mp4a"},
+			want: false,
+		},
+		{
+			name: "video none",
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "none", AudioCodec: "mp4a"},
+			want: false,
+		},
+		{
+			name: "missing audio",
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: ""},
+			want: false,
+		},
+		{
+			name: "audio none",
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none"},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isProgressiveMP4(tc.in)
+			if got != tc.want {
+				t.Fatalf("unexpected result, got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChooseThumbnail(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ytdlpOutput
+		want string
+	}{
+		{
+			name: "prefer direct thumbnail",
+			in: ytdlpOutput{
+				Thumbnail:  "https://img.example/direct.jpg",
+				Thumbnails: []thumbnail{{URL: "https://img.example/fallback.jpg"}},
+			},
+			want: "https://img.example/direct.jpg",
+		},
+		{
+			name: "fallback from thumbnails reverse order",
+			in: ytdlpOutput{
+				Thumbnail:  "",
+				Thumbnails: []thumbnail{{URL: ""}, {URL: "https://img.example/first.jpg"}, {URL: "https://img.example/final.jpg"}},
+			},
+			want: "https://img.example/final.jpg",
+		},
+		{
+			name: "no thumbnail available",
+			in:   ytdlpOutput{},
+			want: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := chooseThumbnail(tc.in); got != tc.want {
+				t.Fatalf("unexpected thumbnail, got=%q want=%q", got, tc.want)
+			}
+		})
+	}
+}

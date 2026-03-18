@@ -340,6 +340,24 @@ func TestHandleResolveX(t *testing.T) {
 		}
 	})
 
+	t.Run("empty url", func(t *testing.T) {
+		cfg := baseTestConfig()
+		server := newTestServerWithXResolver(t, cfg, &fakeResolver{}, &fakeXResolver{}, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/x/resolve", bytes.NewBufferString(`{"url":"   "}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "url is required" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+	})
+
 	t.Run("resolver error", func(t *testing.T) {
 		cfg := baseTestConfig()
 		xResolver := &fakeXResolver{err: errors.New("x bad url")}
