@@ -20,6 +20,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("IG_COOKIES_DIR", "")
 	t.Setenv("IG_COOKIES_FILES", "")
 	t.Setenv("IG_RESOLVE_TRY_WITHOUT_COOKIES", "")
+	t.Setenv("TT_MAX_QUALITY", "")
+	t.Setenv("TT_COOKIES_DIR", "")
+	t.Setenv("TT_COOKIES_FILES", "")
+	t.Setenv("TT_RESOLVE_TRY_WITHOUT_COOKIES", "")
 	t.Setenv("MP3_BITRATE", "")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "")
 	t.Setenv("JOB_RETENTION_DAYS", "")
@@ -62,6 +66,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.IGResolveTryWithoutCookies != true {
 		t.Fatalf("unexpected default IGResolveTryWithoutCookies: %v", cfg.IGResolveTryWithoutCookies)
 	}
+	if cfg.TTMaxQuality != 1080 {
+		t.Fatalf("unexpected default TTMaxQuality: %d", cfg.TTMaxQuality)
+	}
+	if cfg.TTResolveTryWithoutCookies != true {
+		t.Fatalf("unexpected default TTResolveTryWithoutCookies: %v", cfg.TTResolveTryWithoutCookies)
+	}
 	if cfg.RedisAddr != "127.0.0.1:6379" {
 		t.Fatalf("unexpected default RedisAddr: %s", cfg.RedisAddr)
 	}
@@ -90,6 +100,10 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("IG_COOKIES_DIR", "/tmp/ig-cookies")
 	t.Setenv("IG_COOKIES_FILES", "/tmp/ig-a.txt,/tmp/ig-b.txt")
 	t.Setenv("IG_RESOLVE_TRY_WITHOUT_COOKIES", "false")
+	t.Setenv("TT_MAX_QUALITY", "540")
+	t.Setenv("TT_COOKIES_DIR", "/tmp/tt-cookies")
+	t.Setenv("TT_COOKIES_FILES", "/tmp/tt-a.txt,/tmp/tt-b.txt")
+	t.Setenv("TT_RESOLVE_TRY_WITHOUT_COOKIES", "false")
 	t.Setenv("MP3_BITRATE", "256")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "120")
 	t.Setenv("JOB_RETENTION_DAYS", "30")
@@ -143,6 +157,18 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.IGResolveTryWithoutCookies != false {
 		t.Fatalf("unexpected IG_RESOLVE_TRY_WITHOUT_COOKIES: %v", cfg.IGResolveTryWithoutCookies)
+	}
+	if cfg.TTMaxQuality != 540 {
+		t.Fatalf("unexpected TT_MAX_QUALITY: %d", cfg.TTMaxQuality)
+	}
+	if cfg.TTCookiesDir != "/tmp/tt-cookies" {
+		t.Fatalf("unexpected TT_COOKIES_DIR: %s", cfg.TTCookiesDir)
+	}
+	if cfg.TTCookiesFiles != "/tmp/tt-a.txt,/tmp/tt-b.txt" {
+		t.Fatalf("unexpected TT_COOKIES_FILES: %s", cfg.TTCookiesFiles)
+	}
+	if cfg.TTResolveTryWithoutCookies != false {
+		t.Fatalf("unexpected TT_RESOLVE_TRY_WITHOUT_COOKIES: %v", cfg.TTResolveTryWithoutCookies)
 	}
 	if cfg.MP3Bitrate != 256 || cfg.MP3OutputTTLMinutes != 120 || cfg.JobRetentionDays != 30 {
 		t.Fatalf("unexpected MP3/job retention overrides: bitrate=%d ttl=%d retention=%d", cfg.MP3Bitrate, cfg.MP3OutputTTLMinutes, cfg.JobRetentionDays)

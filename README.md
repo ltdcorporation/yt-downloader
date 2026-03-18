@@ -103,6 +103,8 @@ POST /v1/youtube/resolve    { url }
 POST /v1/x/resolve          { url }
 POST /v1/instagram/resolve  { url }
 POST /v1/ig/resolve         { url } (alias)
+POST /v1/tiktok/resolve     { url }
+POST /v1/tt/resolve         { url } (alias)
 GET  /v1/download/mp4       ?url=&format_id=
 POST /v1/jobs/mp3           { url }
 GET  /v1/jobs/:id
@@ -119,6 +121,8 @@ GET  /admin/jobs            (basic auth)
 - X resolver supports multi-cookie fallback via `X_COOKIES_FILES` (comma-separated files) and/or `X_COOKIES_DIR` (directory scan). Public attempt can be toggled with `X_RESOLVE_TRY_WITHOUT_COOKIES`.
 - Instagram resolver supports multi-cookie fallback via `IG_COOKIES_FILES` (comma-separated files) and/or `IG_COOKIES_DIR` (directory scan). Public attempt can be toggled with `IG_RESOLVE_TRY_WITHOUT_COOKIES`.
 - Instagram resolver also returns machine-readable warning code `ig_hls_only_not_supported` for HLS-only posts (current design: no HLS remux fallback yet).
+- TikTok resolver supports multi-cookie fallback via `TT_COOKIES_FILES` (comma-separated files) and/or `TT_COOKIES_DIR` (directory scan). Public attempt can be toggled with `TT_RESOLVE_TRY_WITHOUT_COOKIES`.
+- TikTok resolver also returns machine-readable warning code `tt_hls_only_not_supported` for HLS-only posts (current design: no HLS remux fallback yet).
 - MP3 artifact object key supports prefix via `R2_KEY_PREFIX` (example: `yt-downloader/prod`).
 - CORS allow-list is controlled by `CORS_ALLOWED_ORIGINS`.
 - Jobs and `job_errors` tables are auto-created on first access.

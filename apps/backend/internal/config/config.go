@@ -25,6 +25,10 @@ type Config struct {
 	IGCookiesDir               string
 	IGCookiesFiles             string
 	IGResolveTryWithoutCookies bool
+	TTMaxQuality               int
+	TTCookiesDir               string
+	TTCookiesFiles             string
+	TTResolveTryWithoutCookies bool
 
 	MP3Bitrate          int
 	MP3OutputTTLMinutes int
@@ -66,6 +70,10 @@ func Load() Config {
 		IGCookiesDir:               getenv("IG_COOKIES_DIR", ""),
 		IGCookiesFiles:             getenv("IG_COOKIES_FILES", ""),
 		IGResolveTryWithoutCookies: getenvBool("IG_RESOLVE_TRY_WITHOUT_COOKIES", true),
+		TTMaxQuality:               getenvInt("TT_MAX_QUALITY", 1080),
+		TTCookiesDir:               getenv("TT_COOKIES_DIR", ""),
+		TTCookiesFiles:             getenv("TT_COOKIES_FILES", ""),
+		TTResolveTryWithoutCookies: getenvBool("TT_RESOLVE_TRY_WITHOUT_COOKIES", true),
 		MP3Bitrate:                 getenvInt("MP3_BITRATE", 128),
 		MP3OutputTTLMinutes:        getenvInt("MP3_OUTPUT_TTL_MINUTES", 60),
 		JobRetentionDays:           getenvInt("JOB_RETENTION_DAYS", 14),

@@ -18,6 +18,7 @@ import (
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
 	queuepkg "yt-downloader/backend/internal/queue"
+	"yt-downloader/backend/internal/ttresolver"
 	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
 )
@@ -60,6 +61,20 @@ func (f *fakeIGResolver) Resolve(_ context.Context, rawURL string) (igresolver.R
 	f.inputs = append(f.inputs, rawURL)
 	if f.err != nil {
 		return igresolver.ResolveResult{}, f.err
+	}
+	return f.result, nil
+}
+
+type fakeTTResolver struct {
+	result ttresolver.ResolveResult
+	err    error
+	inputs []string
+}
+
+func (f *fakeTTResolver) Resolve(_ context.Context, rawURL string) (ttresolver.ResolveResult, error) {
+	f.inputs = append(f.inputs, rawURL)
+	if f.err != nil {
+		return ttresolver.ResolveResult{}, f.err
 	}
 	return f.result, nil
 }
@@ -162,23 +177,28 @@ func baseTestConfig() config.Config {
 
 func newTestServer(t *testing.T, cfg config.Config, resolver youtubeResolver, queue taskQueue, store jobStore) *Server {
 	t.Helper()
-	return newTestServerWithResolvers(t, cfg, resolver, &fakeXResolver{}, &fakeIGResolver{}, queue, store)
+	return newTestServerWithResolvers(t, cfg, resolver, &fakeXResolver{}, &fakeIGResolver{}, &fakeTTResolver{}, queue, store)
 }
 
 func newTestServerWithXResolver(t *testing.T, cfg config.Config, resolver youtubeResolver, xResolver xMediaResolver, queue taskQueue, store jobStore) *Server {
 	t.Helper()
-	return newTestServerWithResolvers(t, cfg, resolver, xResolver, &fakeIGResolver{}, queue, store)
+	return newTestServerWithResolvers(t, cfg, resolver, xResolver, &fakeIGResolver{}, &fakeTTResolver{}, queue, store)
 }
 
 func newTestServerWithIGResolver(t *testing.T, cfg config.Config, resolver youtubeResolver, igResolver igMediaResolver, queue taskQueue, store jobStore) *Server {
 	t.Helper()
-	return newTestServerWithResolvers(t, cfg, resolver, &fakeXResolver{}, igResolver, queue, store)
+	return newTestServerWithResolvers(t, cfg, resolver, &fakeXResolver{}, igResolver, &fakeTTResolver{}, queue, store)
 }
 
-func newTestServerWithResolvers(t *testing.T, cfg config.Config, resolver youtubeResolver, xResolver xMediaResolver, igResolver igMediaResolver, queue taskQueue, store jobStore) *Server {
+func newTestServerWithTTResolver(t *testing.T, cfg config.Config, resolver youtubeResolver, ttResolver ttMediaResolver, queue taskQueue, store jobStore) *Server {
+	t.Helper()
+	return newTestServerWithResolvers(t, cfg, resolver, &fakeXResolver{}, &fakeIGResolver{}, ttResolver, queue, store)
+}
+
+func newTestServerWithResolvers(t *testing.T, cfg config.Config, resolver youtubeResolver, xResolver xMediaResolver, igResolver igMediaResolver, ttResolver ttMediaResolver, queue taskQueue, store jobStore) *Server {
 	t.Helper()
 	logger := log.New(io.Discard, "", 0)
-	return newServerWithDeps(cfg, logger, resolver, xResolver, igResolver, queue, store)
+	return newServerWithDeps(cfg, logger, resolver, xResolver, igResolver, ttResolver, queue, store)
 }
 
 func decodeJSONMap(t *testing.T, body []byte) map[string]any {
@@ -552,6 +572,109 @@ func TestHandleResolveInstagram(t *testing.T) {
 		}
 		if len(igResolver.inputs) != 1 || igResolver.inputs[0] != "https://instagram.com/reel/ABC123" {
 			t.Fatalf("ig resolver should receive input URL, got %#v", igResolver.inputs)
+		}
+	})
+}
+
+func TestHandleResolveTikTok(t *testing.T) {
+	t.Run("invalid json", func(t *testing.T) {
+		cfg := baseTestConfig()
+		server := newTestServerWithTTResolver(t, cfg, &fakeResolver{}, &fakeTTResolver{}, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/tiktok/resolve", bytes.NewBufferString("{"))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("empty url", func(t *testing.T) {
+		cfg := baseTestConfig()
+		server := newTestServerWithTTResolver(t, cfg, &fakeResolver{}, &fakeTTResolver{}, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/tiktok/resolve", bytes.NewBufferString(`{"url":"   "}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "url is required" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+	})
+
+	t.Run("resolver error", func(t *testing.T) {
+		cfg := baseTestConfig()
+		ttResolver := &fakeTTResolver{err: errors.New("tt bad url")}
+		server := newTestServerWithTTResolver(t, cfg, &fakeResolver{}, ttResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/tiktok/resolve", bytes.NewBufferString(`{"url":"https://www.tiktok.com/@user/video/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "tt bad url" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+		if _, ok := payload["code"]; ok {
+			t.Fatalf("generic resolver error should not include code, got %#v", payload)
+		}
+	})
+
+	t.Run("resolver typed error includes code", func(t *testing.T) {
+		cfg := baseTestConfig()
+		ttResolver := &fakeTTResolver{err: &ttresolver.ResolveError{Code: ttresolver.ErrCodeTTHLSOnlyNotSupported, Message: "TikTok video is HLS-only and not supported yet"}}
+		server := newTestServerWithTTResolver(t, cfg, &fakeResolver{}, ttResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/tiktok/resolve", bytes.NewBufferString(`{"url":"https://www.tiktok.com/@user/video/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d", rec.Code)
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["error"] != "TikTok video is HLS-only and not supported yet" {
+			t.Fatalf("unexpected error payload: %#v", payload)
+		}
+		if payload["code"] != ttresolver.ErrCodeTTHLSOnlyNotSupported {
+			t.Fatalf("expected code %q, got %#v", ttresolver.ErrCodeTTHLSOnlyNotSupported, payload["code"])
+		}
+	})
+
+	t.Run("success", func(t *testing.T) {
+		cfg := baseTestConfig()
+		ttResolver := &fakeTTResolver{result: ttresolver.ResolveResult{Title: "TT Video", CookieProfile: "tt-main"}}
+		server := newTestServerWithTTResolver(t, cfg, &fakeResolver{}, ttResolver, &fakeQueue{}, newFakeJobStore())
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/tt/resolve", bytes.NewBufferString(`{"url":"https://www.tiktok.com/@user/video/1"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["title"] != "TT Video" {
+			t.Fatalf("unexpected response payload: %#v", payload)
+		}
+		if payload["cookie_profile"] != "tt-main" {
+			t.Fatalf("expected cookie_profile tt-main, got %#v", payload["cookie_profile"])
+		}
+		if len(ttResolver.inputs) != 1 || ttResolver.inputs[0] != "https://www.tiktok.com/@user/video/1" {
+			t.Fatalf("tt resolver should receive input URL, got %#v", ttResolver.inputs)
 		}
 	})
 }

@@ -23,6 +23,7 @@ import (
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
 	"yt-downloader/backend/internal/queue"
+	"yt-downloader/backend/internal/ttresolver"
 	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
 )
@@ -37,6 +38,10 @@ type xMediaResolver interface {
 
 type igMediaResolver interface {
 	Resolve(ctx context.Context, rawURL string) (igresolver.ResolveResult, error)
+}
+
+type ttMediaResolver interface {
+	Resolve(ctx context.Context, rawURL string) (ttresolver.ResolveResult, error)
 }
 
 type taskQueue interface {
@@ -58,6 +63,7 @@ type Server struct {
 	resolver   youtubeResolver
 	xResolver  xMediaResolver
 	igResolver igMediaResolver
+	ttResolver ttMediaResolver
 	queue      taskQueue
 	jobStore   jobStore
 	origins    map[string]struct{}
@@ -83,6 +89,15 @@ func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) 
 		cfg.IGCookiesFiles,
 		cfg.IGResolveTryWithoutCookies,
 	)
+	ttResolver := ttresolver.NewResolver(
+		cfg.YTDLPBinary,
+		cfg.YTDLPJSRuntimes,
+		cfg.TTMaxQuality,
+		cfg.MaxFileSizeBytes,
+		cfg.TTCookiesDir,
+		cfg.TTCookiesFiles,
+		cfg.TTResolveTryWithoutCookies,
+	)
 
 	return newServerWithDeps(
 		cfg,
@@ -90,12 +105,13 @@ func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) 
 		resolver,
 		xResolver,
 		igResolver,
+		ttResolver,
 		asynq.NewClient(asynq.RedisClientOpt{Addr: cfg.RedisAddr, Password: cfg.RedisPassword}),
 		jobs.NewStore(cfg, logger),
 	)
 }
 
-func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeResolver, xResolver xMediaResolver, igResolver igMediaResolver, queue taskQueue, store jobStore) *Server {
+func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeResolver, xResolver xMediaResolver, igResolver igMediaResolver, ttResolver ttMediaResolver, queue taskQueue, store jobStore) *Server {
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
 	}
@@ -107,6 +123,9 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 	if igResolver == nil {
 		panic("instagram resolver is required")
+	}
+	if ttResolver == nil {
+		panic("tiktok resolver is required")
 	}
 	if queue == nil {
 		panic("queue is required")
@@ -126,6 +145,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		resolver:   resolver,
 		xResolver:  xResolver,
 		igResolver: igResolver,
+		ttResolver: ttResolver,
 		queue:      queue,
 		jobStore:   store,
 		origins:    parseAllowedOrigins(cfg.CORSAllowedOrigins),
@@ -159,6 +179,8 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/x/resolve", s.handleResolveX)
 	r.Post("/v1/instagram/resolve", s.handleResolveInstagram)
 	r.Post("/v1/ig/resolve", s.handleResolveInstagram)
+	r.Post("/v1/tiktok/resolve", s.handleResolveTikTok)
+	r.Post("/v1/tt/resolve", s.handleResolveTikTok)
 	r.Post("/v1/jobs/mp3", s.handleCreateMP3Job)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
@@ -241,6 +263,34 @@ func (s *Server) handleResolveInstagram(w http.ResponseWriter, r *http.Request) 
 	result, err := s.igResolver.Resolve(r.Context(), req.URL)
 	if err != nil {
 		var resolveErr *igresolver.ResolveError
+		if errors.As(err, &resolveErr) && strings.TrimSpace(resolveErr.Code) != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": resolveErr.Error(),
+				"code":  resolveErr.Code,
+			})
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleResolveTikTok(w http.ResponseWriter, r *http.Request) {
+	var req resolveYouTubeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	result, err := s.ttResolver.Resolve(r.Context(), req.URL)
+	if err != nil {
+		var resolveErr *ttresolver.ResolveError
 		if errors.As(err, &resolveErr) && strings.TrimSpace(resolveErr.Code) != "" {
 			writeJSON(w, http.StatusBadRequest, map[string]any{
 				"error": resolveErr.Error(),

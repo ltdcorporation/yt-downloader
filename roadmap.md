@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
+_Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 
@@ -22,6 +22,9 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 - [ ] Home flow Instagram resolve belum ada di UI (backend sudah siap)
 - [ ] UI **pilih kualitas download MP4 untuk Instagram** belum dikerjakan (status FE: belum implementasi)
 - [ ] UX warning khusus untuk kasus Instagram **HLS-only (by design belum didukung)** belum ada di FE
+- [ ] Home flow TikTok resolve belum ada di UI (backend sudah siap)
+- [ ] UI **pilih kualitas download MP4 untuk TikTok** belum dikerjakan (status FE: belum implementasi)
+- [ ] UX warning khusus untuk kasus TikTok **HLS-only (by design belum didukung)** belum ada di FE
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
@@ -95,7 +98,23 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 - [ ] Tampilkan state “belum support HLS-only” + CTA fallback saat code tersebut muncul
 - [ ] Logging event ringan buat success/fail resolve Instagram
 
-### H. Frontend Quality Checklist
+### H. Milestone FE-7 — TikTok Flow di Home (Next)
+
+**Target:** user paste link TikTok -> resolve -> pilih kualitas -> download MP4.
+
+**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow TikTok masih **belum dikerjakan**.
+
+- [ ] Tambah source mode (YouTube / X / Instagram / TikTok) di UI home
+- [ ] Call `POST /api/v1/tiktok/resolve` saat mode TikTok aktif
+- [ ] Render metadata + format list dari response resolver TikTok
+- [ ] Tambah UI picker kualitas MP4 khusus TikTok (list/card per format + size jika tersedia)
+- [ ] Tambah CTA download MP4 per kualitas hasil resolver TikTok
+- [ ] Samakan UX pola pemilihan kualitas TikTok agar konsisten dengan flow YouTube/X/Instagram
+- [ ] Handle backend error code `tt_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
+- [ ] Tampilkan state “belum support HLS-only” + CTA fallback saat code tersebut muncul
+- [ ] Logging event ringan buat success/fail resolve TikTok
+
+### I. Frontend Quality Checklist
 
 - [ ] Error message human-readable (bukan raw error backend)
 - [ ] State konsisten (loading/disabled/success/error)
@@ -116,6 +135,7 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
   - [x] `POST /v1/youtube/resolve`
   - [x] `POST /v1/x/resolve`
   - [x] `POST /v1/instagram/resolve` (alias: `POST /v1/ig/resolve`)
+  - [x] `POST /v1/tiktok/resolve` (alias: `POST /v1/tt/resolve`)
   - [x] `GET /v1/download/mp4`
   - [x] `POST /v1/jobs/mp3`
   - [x] `GET /v1/jobs/:id`
@@ -142,6 +162,14 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
   - [x] `IG_COOKIES_FILES`
   - [x] `IG_RESOLVE_TRY_WITHOUT_COOKIES`
 - [x] Error code typed untuk Instagram HLS-only sudah ada: `ig_hls_only_not_supported`
+- [x] Resolver TikTok aktif untuk URL `@user/video`, `t`, `vm.tiktok.com`, `vt.tiktok.com`
+- [x] Multi-cookie fallback aktif untuk resolver TikTok (rotasi akun sampai resolve sukses)
+- [x] Env runtime TikTok resolver sudah ditambah:
+  - [x] `TT_MAX_QUALITY`
+  - [x] `TT_COOKIES_DIR`
+  - [x] `TT_COOKIES_FILES`
+  - [x] `TT_RESOLVE_TRY_WITHOUT_COOKIES`
+- [x] Error code typed untuk TikTok HLS-only sudah ada: `tt_hls_only_not_supported`
 
 ### B. Milestone BE-1 — Runtime & API Hardening (Done)
 
@@ -212,11 +240,29 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
   - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post IG yang tidak punya direct MP4
   - [ ] ranking cookie profile berdasarkan success-rate
 
-### G. Backend Quality Checklist
+### G. Milestone BE-6 — TikTok Resolver + Multi-Cookies (Done, Hardening Lanjut)
+
+**Target:** resolve link TikTok non-live secara stabil, termasuk konten yang butuh sesi akun.
+
+- [x] Tambah endpoint `POST /v1/tiktok/resolve` + alias `POST /v1/tt/resolve`
+- [x] Validasi host/path TikTok yang didukung (`@user/video`, `/t/`, `vm.tiktok.com`, `vt.tiktok.com`)
+- [x] Rotasi cookie profile dari file list + directory scan
+- [x] Response menyertakan `cookie_profile` yang berhasil dipakai
+- [x] Policy explicit: live content ditolak
+- [x] Error code typed untuk HLS-only: `tt_hls_only_not_supported`
+- [x] Hardening test:
+  - [x] edge cases resolver + endpoint
+  - [x] coverage `internal/ttresolver` stabil di ~95%
+- [ ] Next hardening (belum):
+  - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post TikTok yang tidak punya direct MP4
+  - [ ] ranking cookie profile berdasarkan success-rate
+
+### H. Backend Quality Checklist
 
 - [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
 - [x] Resolver X multi-cookie aktif + tervalidasi real-link
 - [x] Resolver Instagram multi-cookie aktif + tervalidasi test-suite
+- [x] Resolver TikTok multi-cookie aktif + tervalidasi test-suite
 - [x] False-negative direct `http-*` MP4 untuk X sudah dipatch
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
@@ -224,6 +270,7 @@ _Last update: 2026-03-18 (X + Instagram resolver multi-cookie rollout)_
 - [ ] Retention/cleanup jobs tetap terkendali
 - [ ] Fallback untuk varian HLS-only post X
 - [ ] Fallback untuk varian HLS-only post Instagram
+- [ ] Fallback untuk varian HLS-only post TikTok
 
 ---
 
@@ -238,7 +285,8 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] History pakai data real (bukan sample)
 - [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
 - [ ] User bisa resolve + **pilih kualitas** + download dari link Instagram via UI
-- [ ] Saat dapat error code HLS-only (`x_hls_only_not_supported` / `ig_hls_only_not_supported`), UI menampilkan warning terarah (by design belum support)
+- [ ] User bisa resolve + **pilih kualitas** + download dari link TikTok via UI
+- [ ] Saat dapat error code HLS-only (`x_hls_only_not_supported` / `ig_hls_only_not_supported` / `tt_hls_only_not_supported`), UI menampilkan warning terarah (by design belum support)
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
@@ -247,8 +295,10 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] R2 aktif dan MP3 end-to-end lulus test
 - [x] User bisa resolve X/Twitter non-live via `POST /v1/x/resolve`
 - [x] User bisa resolve Instagram non-live via `POST /v1/instagram/resolve`
+- [x] User bisa resolve TikTok non-live via `POST /v1/tiktok/resolve`
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video Instagram (termasuk HLS-only) 100% covered
+- [ ] Semua varian post video TikTok (termasuk HLS-only) 100% covered
 
 ### Security/Operational Gate
 - [x] Web publik, API private internal
@@ -314,3 +364,32 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] Untuk post IG HLS-only, belum ada remux fallback (masih return typed warning)
 - [ ] UI frontend untuk resolve IG + picker kualitas download masih backlog (belum implementasi)
 - [ ] UI frontend belum map code `ig_hls_only_not_supported` ke warning yang user-friendly
+
+---
+
+## 6) Delivery Notes — Implementasi Fitur TikTok Resolver (2026-03-18)
+
+### A. Scope yang dikerjakan
+
+- [x] Backend resolver TikTok dengan endpoint baru `POST /v1/tiktok/resolve`
+- [x] Alias endpoint `POST /v1/tt/resolve`
+- [x] Multi-account cookie support untuk auto-rotate saat resolve
+- [x] Typed error code untuk HLS-only: `tt_hls_only_not_supported`
+
+### B. Jalur pengerjaan
+
+- [x] Patch code di repo **workspace**
+- [x] Hardening test + coverage resolver + HTTP handler
+- [x] Integrasi config/env baru untuk TT cookies
+
+### C. Hasil validasi
+
+- [x] Unit + integration suite backend lulus (`make backend-test`)
+- [x] Endpoint TikTok menerima flow yang sama seperti X/Instagram (resolve + format list + cookie_profile)
+- [x] Error non-generic untuk kasus HLS-only sudah tersedia untuk wiring FE
+
+### D. Catatan batasan saat ini (TikTok)
+
+- [ ] Untuk post TikTok HLS-only, belum ada remux fallback (masih return typed warning)
+- [ ] UI frontend untuk resolve TikTok + picker kualitas download masih backlog (belum implementasi)
+- [ ] UI frontend belum map code `tt_hls_only_not_supported` ke warning yang user-friendly

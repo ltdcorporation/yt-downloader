@@ -2,11 +2,12 @@
 
 ## Product Scope
 
-- Platform: YouTube + X/Twitter + Instagram (single post/video URL)
+- Platform: YouTube + X/Twitter + Instagram + TikTok (single post/video URL)
 - Supported URL types:
   - YouTube: `watch`, `youtu.be`, `shorts`
   - X/Twitter: `/{user}/status/{id}`, `/i/status/{id}`
   - Instagram: `/p/{id}`, `/reel/{id}`, `/reels/{id}`, `/tv/{id}`
+  - TikTok: `/@{user}/video/{id}`, `/t/{id}`, `vm.tiktok.com/{id}`, `vt.tiktok.com/{id}`
 - Output:
   - MP4 via redirect (quality list follows available formats)
   - MP3 (128 kbps) via queue
@@ -41,6 +42,7 @@
 - `POST /v1/youtube/resolve`
 - `POST /v1/x/resolve`
 - `POST /v1/instagram/resolve` (alias: `POST /v1/ig/resolve`)
+- `POST /v1/tiktok/resolve` (alias: `POST /v1/tt/resolve`)
 - `POST /v1/jobs/mp3`
 - `GET /v1/jobs/:id`
 - `GET /v1/download/mp4`
