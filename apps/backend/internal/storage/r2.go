@@ -14,9 +14,18 @@ import (
 	"yt-downloader/backend/internal/config"
 )
 
+type minioObjectClient interface {
+	FPutObject(ctx context.Context, bucketName, objectName, filePath string, opts minio.PutObjectOptions) (minio.UploadInfo, error)
+	PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error)
+}
+
+var newMinioClient = func(endpoint string, opts *minio.Options) (minioObjectClient, error) {
+	return minio.New(endpoint, opts)
+}
+
 type R2Client struct {
 	bucket string
-	client *minio.Client
+	client minioObjectClient
 }
 
 func NewR2Client(_ context.Context, cfg config.Config) (*R2Client, error) {
@@ -37,7 +46,7 @@ func NewR2Client(_ context.Context, cfg config.Config) (*R2Client, error) {
 		region = "auto"
 	}
 
-	client, err := minio.New(parsed.Host, &minio.Options{
+	client, err := newMinioClient(parsed.Host, &minio.Options{
 		Creds:        credentials.NewStaticV4(cfg.R2AccessKeyID, cfg.R2SecretAccessKey, ""),
 		Secure:       parsed.Scheme == "https",
 		Region:       region,
