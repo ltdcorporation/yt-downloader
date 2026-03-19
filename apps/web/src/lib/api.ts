@@ -17,6 +17,10 @@ export interface ResolveResponse {
   thumbnail: string;
   duration_seconds: number;
   formats: ResolveFormat[];
+  author?: string;
+  views?: string;
+  likes?: string;
+  shares?: string;
 }
 
 export interface CreateMp3JobResponse {
