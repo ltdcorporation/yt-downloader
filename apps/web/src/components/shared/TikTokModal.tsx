@@ -61,7 +61,7 @@ export default function TikTokModal({
       aria-labelledby="tiktok-modal-title"
     >
       <div
-        className="bg-[#FFE2E2] dark:bg-slate-900 w-full max-w-sm rounded-xl shadow-lg overflow-hidden border border-primary/10"
+        className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-xl shadow-lg overflow-hidden border border-primary/10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Section */}
