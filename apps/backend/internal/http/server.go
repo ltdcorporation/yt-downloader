@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -321,9 +322,39 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolveResult, err := s.resolver.Resolve(r.Context(), req.URL)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	platform := s.detectPlatform(req.URL)
+	var title string
+	switch platform {
+	case "youtube":
+		res, err := s.resolver.Resolve(r.Context(), req.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+	case "tiktok":
+		res, err := s.ttResolver.Resolve(r.Context(), req.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+	case "x":
+		res, err := s.xResolver.Resolve(r.Context(), req.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+	case "instagram":
+		res, err := s.igResolver.Resolve(r.Context(), req.URL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+	default:
+		writeError(w, http.StatusBadRequest, "unsupported platform")
 		return
 	}
 
@@ -343,7 +374,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 		InputURL:   sourceURL,
 		OutputKind: "mp3",
 		OutputKey:  outputKey,
-		Title:      resolveResult.Title,
+		Title:      title,
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
@@ -419,13 +450,77 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.resolver.Resolve(r.Context(), sourceURL)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	platform := s.detectPlatform(sourceURL)
+	var title string
+	var formats []struct {
+		ID   string
+		URL  string
+		Type string
+	}
+
+	switch platform {
+	case "youtube":
+		res, err := s.resolver.Resolve(r.Context(), sourceURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+		for _, f := range res.Formats {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: f.ID, URL: f.URL, Type: f.Type})
+		}
+	case "tiktok":
+		res, err := s.ttResolver.Resolve(r.Context(), sourceURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+		for _, f := range res.Formats {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: f.ID, URL: f.URL, Type: f.Type})
+		}
+	case "x":
+		res, err := s.xResolver.Resolve(r.Context(), sourceURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+		for _, f := range res.Formats {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: f.ID, URL: f.URL, Type: f.Type})
+		}
+	case "instagram":
+		res, err := s.igResolver.Resolve(r.Context(), sourceURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		title = res.Title
+		for _, f := range res.Formats {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: f.ID, URL: f.URL, Type: f.Type})
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "unsupported platform")
 		return
 	}
 
-	for _, format := range result.Formats {
+	for _, format := range formats {
 		if format.Type != "mp4" {
 			continue
 		}
@@ -437,14 +532,14 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 
 			// Force download by setting Content-Disposition
 			filename := "video.mp4"
-			if strings.TrimSpace(result.Title) != "" {
+			if strings.TrimSpace(title) != "" {
 				// Simple cleanup of title for filename
 				cleanTitle := strings.Map(func(r rune) rune {
 					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
 						return r
 					}
 					return '_'
-				}, result.Title)
+				}, title)
 				if cleanTitle != "" {
 					filename = cleanTitle + ".mp4"
 				}
@@ -457,6 +552,34 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeError(w, http.StatusBadRequest, "selected format is not available")
+}
+
+func (s *Server) detectPlatform(rawURL string) string {
+	targetURL, _, _, err := youtube.ParseInput(rawURL)
+	if err != nil {
+		return "unknown"
+	}
+
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return "unknown"
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+	if strings.Contains(host, "youtube.com") || strings.Contains(host, "youtu.be") {
+		return "youtube"
+	}
+	if strings.Contains(host, "tiktok.com") {
+		return "tiktok"
+	}
+	if strings.Contains(host, "instagram.com") {
+		return "instagram"
+	}
+	if strings.Contains(host, "twitter.com") || strings.Contains(host, "x.com") {
+		return "x"
+	}
+
+	return "unknown"
 }
 
 func (s *Server) handleAdminJobs(w http.ResponseWriter, r *http.Request) {

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Download, YoutubeLogo, WarningCircle } from "@phosphor-icons/react";
+import { X, Download, YoutubeLogo, TiktokLogo, InstagramLogo, XLogo, WarningCircle } from "@phosphor-icons/react";
 import { api, type ResolveFormat, type ResolveResponse } from "@/lib/api";
+import { detectPlatform } from "@/lib/utils";
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -59,10 +60,38 @@ export default function DownloadModal({
   sourceUrl,
   result,
   isLoading,
-  onConfirmDownload,
-}: DownloadModalProps) {
-  const [selectedFormatId, setSelectedFormatId] = useState("");
-  const [isConfirming, setIsConfirming] = useState(false);
+    onConfirmDownload,
+  }: DownloadModalProps) {
+    const [selectedFormatId, setSelectedFormatId] = useState("");
+    const [isConfirming, setIsConfirming] = useState(false);
+  
+    const platform = detectPlatform(sourceUrl);
+    let PlatformIcon = YoutubeLogo;
+    let platformLabel = "YouTube";
+    let platformColor = "bg-red-100 text-red-600";
+  
+    switch (platform) {
+      case "youtube":
+        PlatformIcon = YoutubeLogo;
+        platformLabel = "YouTube";
+        platformColor = "bg-red-100 text-red-600";
+        break;
+      case "tiktok":
+        PlatformIcon = TiktokLogo;
+        platformLabel = "TikTok";
+        platformColor = "bg-slate-900 text-white";
+        break;
+      case "instagram":
+        PlatformIcon = InstagramLogo;
+        platformLabel = "Instagram";
+        platformColor = "bg-pink-100 text-pink-600";
+        break;
+      case "x":
+        PlatformIcon = XLogo;
+        platformLabel = "X / Twitter";
+        platformColor = "bg-slate-900 text-white";
+        break;
+    }
 
   const mp4Formats = useMemo(() => {
     const formats = (result?.formats || []).filter(
@@ -212,9 +241,9 @@ export default function DownloadModal({
 
             <div className="min-w-0 flex-1 flex flex-col justify-center">
               <div className="flex items-center gap-2 mb-2">
-                <span className="bg-red-100 text-red-600 text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                  <YoutubeLogo size={12} weight="fill" />
-                  YouTube
+                <span className={`${platformColor} text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1`}>
+                  <PlatformIcon size={12} weight="fill" />
+                  {platformLabel}
                 </span>
                 {isLoading ? (
                   <span className="text-slate-400 text-xs">Resolving formats...</span>
@@ -278,7 +307,7 @@ export default function DownloadModal({
               <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3 text-sm flex items-start gap-2">
                 <WarningCircle size={18} className="mt-0.5 flex-shrink-0" />
                 <span>
-                  No MP4 download options found for this URL. Try another public YouTube video.
+                  No MP4 download options found for this URL. Try another public {platformLabel} video.
                 </span>
               </div>
             )}

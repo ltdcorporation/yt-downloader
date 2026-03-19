@@ -12,8 +12,6 @@ import {
   XLogo,
 } from "@phosphor-icons/react";
 import DownloadModal from "./DownloadModal";
-import TikTokModal from "./TikTokModal";
-import InstagramModal from "./InstagramModal";
 import ProcessingModal from "./ProcessingModal";
 import { api, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
@@ -23,8 +21,6 @@ export default function InputBar() {
   const [resolvedUrl, setResolvedUrl] = useState("");
   const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isTikTokModalOpen, setIsTikTokModalOpen] = useState(false);
-  const [isInstagramModalOpen, setIsInstagramModalOpen] = useState(false);
   const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -45,19 +41,11 @@ export default function InputBar() {
       setResolvedUrl(targetUrl);
       setResolveResult(result);
 
-      // Show platform-specific modal
-      if (platformType === "tiktok") {
-        setIsTikTokModalOpen(true);
-      } else if (platformType === "instagram") {
-        setIsInstagramModalOpen(true);
-      } else {
-        setIsModalOpen(true);
-      }
+      // Show DownloadModal for all supported platforms
+      setIsModalOpen(true);
     } catch (error) {
       setResolveResult(null);
       setIsModalOpen(false);
-      setIsTikTokModalOpen(false);
-      setIsInstagramModalOpen(false);
       setErrorMessage(
         error instanceof Error ? error.message : "Failed to resolve video URL.",
       );
@@ -87,21 +75,11 @@ export default function InputBar() {
     setIsModalOpen(false);
   };
 
-  const handleCloseTikTokModal = () => {
-    setIsTikTokModalOpen(false);
-  };
-
-  const handleCloseInstagramModal = () => {
-    setIsInstagramModalOpen(false);
-  };
-
   const startFinalDownload = (formatId: string) => {
     if (!resolvedUrl || !resolveResult) return;
 
     // Close all potential source modals
     setIsModalOpen(false);
-    setIsTikTokModalOpen(false);
-    setIsInstagramModalOpen(false);
 
     // Show processing modal
     setIsProcessingModalOpen(true);
@@ -123,55 +101,6 @@ export default function InputBar() {
         setIsProcessingModalOpen(false);
       }, 4000);
     }, 2500);
-  };
-
-  const handleInstagramDownload = () => {
-    if (!resolvedUrl || !resolveResult) {
-      return;
-    }
-
-    const mp4Formats = resolveResult.formats.filter(
-      (format) => format.type === "mp4",
-    );
-    const highestQualityFormat = mp4Formats.length > 0
-      ? mp4Formats[mp4Formats.length - 1]
-      : null;
-
-    if (highestQualityFormat) {
-      startFinalDownload(highestQualityFormat.id);
-    }
-  };
-
-  const handleTikTokDownloadNoWatermark = () => {
-    if (!resolvedUrl || !resolveResult) {
-      return;
-    }
-
-    const mp4Formats = resolveResult.formats.filter(
-      (format) => format.type === "mp4",
-    );
-    const highestQualityFormat = mp4Formats.length > 0
-      ? mp4Formats[mp4Formats.length - 1]
-      : null;
-
-    if (highestQualityFormat) {
-      startFinalDownload(highestQualityFormat.id);
-    }
-  };
-
-  const handleTikTokDownloadWithWatermark = () => {
-    if (!resolvedUrl || !resolveResult) {
-      return;
-    }
-
-    const mp4Formats = resolveResult.formats.filter(
-      (format) => format.type === "mp4",
-    );
-    const lowestQualityFormat = mp4Formats.length > 0 ? mp4Formats[0] : null;
-
-    if (lowestQualityFormat) {
-      startFinalDownload(lowestQualityFormat.id);
-    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -278,31 +207,6 @@ export default function InputBar() {
         result={resolveResult}
         isLoading={isLoading}
         onConfirmDownload={startFinalDownload}
-      />
-
-      <TikTokModal
-        isOpen={isTikTokModalOpen}
-        onClose={handleCloseTikTokModal}
-        thumbnail={resolveResult?.thumbnail ?? null}
-        title={resolveResult?.title ?? ""}
-        author={resolveResult?.author ?? ""}
-        views={resolveResult?.views ?? "0"}
-        likes={resolveResult?.likes ?? "0"}
-        shares={resolveResult?.shares ?? "0"}
-        onDownloadNoWatermark={handleTikTokDownloadNoWatermark}
-        onDownloadWithWatermark={handleTikTokDownloadWithWatermark}
-      />
-
-      <InstagramModal
-        isOpen={isInstagramModalOpen}
-        onClose={handleCloseInstagramModal}
-        thumbnail={resolveResult?.thumbnail ?? null}
-        title={resolveResult?.title ?? ""}
-        author={resolveResult?.author ?? ""}
-        views={resolveResult?.views ?? "0"}
-        likes={resolveResult?.likes ?? "0"}
-        shares={resolveResult?.shares ?? "0"}
-        onDownload={handleInstagramDownload}
       />
 
       <ProcessingModal 
