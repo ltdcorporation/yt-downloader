@@ -14,6 +14,7 @@ import {
 import DownloadModal from "./DownloadModal";
 import TikTokModal from "./TikTokModal";
 import InstagramModal from "./InstagramModal";
+import ProcessingModal from "./ProcessingModal";
 import { api, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ export default function InputBar() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTikTokModalOpen, setIsTikTokModalOpen] = useState(false);
   const [isInstagramModalOpen, setIsInstagramModalOpen] = useState(false);
+  const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -93,6 +95,29 @@ export default function InputBar() {
     setIsInstagramModalOpen(false);
   };
 
+  const startFinalDownload = (formatId: string) => {
+    if (!resolvedUrl || !resolveResult) return;
+
+    // Close all potential source modals
+    setIsModalOpen(false);
+    setIsTikTokModalOpen(false);
+    setIsInstagramModalOpen(false);
+
+    // Show processing modal
+    setIsProcessingModalOpen(true);
+
+    // Mock delay for "processing" then trigger real download
+    setTimeout(() => {
+      const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, formatId);
+      window.location.href = downloadUrl;
+
+      // Keep processing modal for a bit longer to show "Done" status
+      setTimeout(() => {
+        setIsProcessingModalOpen(false);
+      }, 4000);
+    }, 2500);
+  };
+
   const handleInstagramDownload = () => {
     if (!resolvedUrl || !resolveResult) {
       return;
@@ -106,13 +131,8 @@ export default function InputBar() {
       : null;
 
     if (highestQualityFormat) {
-      const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, highestQualityFormat.id);
-      const newTab = window.open(downloadUrl, "_blank", "noopener,noreferrer");
-      if (!newTab) {
-        window.location.href = downloadUrl;
-      }
+      startFinalDownload(highestQualityFormat.id);
     }
-    setIsInstagramModalOpen(false);
   };
 
   const handleTikTokDownloadNoWatermark = () => {
@@ -128,13 +148,8 @@ export default function InputBar() {
       : null;
 
     if (highestQualityFormat) {
-      const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, highestQualityFormat.id);
-      const newTab = window.open(downloadUrl, "_blank", "noopener,noreferrer");
-      if (!newTab) {
-        window.location.href = downloadUrl;
-      }
+      startFinalDownload(highestQualityFormat.id);
     }
-    setIsTikTokModalOpen(false);
   };
 
   const handleTikTokDownloadWithWatermark = () => {
@@ -148,13 +163,8 @@ export default function InputBar() {
     const lowestQualityFormat = mp4Formats.length > 0 ? mp4Formats[0] : null;
 
     if (lowestQualityFormat) {
-      const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, lowestQualityFormat.id);
-      const newTab = window.open(downloadUrl, "_blank", "noopener,noreferrer");
-      if (!newTab) {
-        window.location.href = downloadUrl;
-      }
+      startFinalDownload(lowestQualityFormat.id);
     }
-    setIsTikTokModalOpen(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -260,6 +270,7 @@ export default function InputBar() {
         sourceUrl={resolvedUrl}
         result={resolveResult}
         isLoading={isLoading}
+        onConfirmDownload={startFinalDownload}
       />
 
       <TikTokModal
@@ -285,6 +296,11 @@ export default function InputBar() {
         likes={resolveResult?.likes ?? "0"}
         shares={resolveResult?.shares ?? "0"}
         onDownload={handleInstagramDownload}
+      />
+
+      <ProcessingModal 
+        isOpen={isProcessingModalOpen} 
+        title={resolveResult?.title}
       />
     </>
   );

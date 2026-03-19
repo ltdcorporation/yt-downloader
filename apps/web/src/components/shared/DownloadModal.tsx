@@ -11,6 +11,7 @@ interface DownloadModalProps {
   sourceUrl: string;
   result: ResolveResponse | null;
   isLoading?: boolean;
+  onConfirmDownload: (formatId: string) => void;
 }
 
 function parseQualityToHeight(quality: string): number {
@@ -58,6 +59,7 @@ export default function DownloadModal({
   sourceUrl,
   result,
   isLoading,
+  onConfirmDownload,
 }: DownloadModalProps) {
   const [selectedFormatId, setSelectedFormatId] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
@@ -127,10 +129,7 @@ export default function DownloadModal({
       return;
     }
 
-    const downloadUrl = api.getMp4DownloadUrl(sourceUrl, selectedFormat.id);
-    // Trigger download in the same tab. Since backend sends Content-Disposition: attachment,
-    // the browser will just start the download without navigating away or opening a new tab.
-    window.location.href = downloadUrl;
+    onConfirmDownload(selectedFormat.id);
     setIsConfirming(false);
   };
 
