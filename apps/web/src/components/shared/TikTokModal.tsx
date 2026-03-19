@@ -61,7 +61,7 @@ export default function TikTokModal({
       aria-labelledby="tiktok-modal-title"
     >
       <div
-        className="bg-[#FFE2E2] dark:bg-slate-900 w-full max-w-md rounded-xl shadow-lg overflow-hidden border border-primary/10 m-4"
+        className="bg-[#FFE2E2] dark:bg-slate-900 w-full max-w-sm rounded-xl shadow-lg overflow-hidden border border-primary/10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Section */}
@@ -85,7 +85,7 @@ export default function TikTokModal({
         {/* Content Body */}
         <div className="p-6 flex flex-col items-center">
           {/* Vertical Video Thumbnail */}
-          <div className="relative w-full aspect-[9/16] max-h-[400px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden shadow-md group">
+          <div className="relative w-full aspect-[9/16] max-h-[320px] bg-slate-200 dark:bg-slate-700 rounded-lg overflow-hidden shadow-md group">
             {thumbnail ? (
               <div
                 className="absolute inset-0 bg-center bg-no-repeat bg-cover"
@@ -148,11 +148,6 @@ export default function TikTokModal({
           </div>
         </div>
       </div>
-
-      {/* Helpful tip below card */}
-      <p className="text-center text-primary/50 dark:text-slate-500 text-xs mt-4 italic font-medium">
-        Link automatically detected from clipboard
-      </p>
     </div>
   );
 
