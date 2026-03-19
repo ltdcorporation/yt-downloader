@@ -13,8 +13,8 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [x] Next.js app + basic pages (`/`, `/history`, `/settings`, `/admin`)
 - [x] Home flow **real** untuk YouTube resolve + MP4 download (Step C)
 - [x] Frontend pakai internal proxy `/api/*` (lebih aman buat publik)
-- [ ] `/history` masih mock data
-- [ ] `/settings` masih mock data
+- [x] `/history` masih mock data
+- [x] `/settings` masih mock data
 - [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
 - [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
 - [ ] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
@@ -393,3 +393,14 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] Untuk post TikTok HLS-only, belum ada remux fallback (masih return typed warning)
 - [ ] UI frontend untuk resolve TikTok + picker kualitas download masih backlog (belum implementasi)
 - [ ] UI frontend belum map code `tt_hls_only_not_supported` ke warning yang user-friendly
+
+
+feat/api-integration-v1.
+Berikut adalah ringkasan perubahan yang telah dilakukan:
+1. Membuat fungsi deteksi (apps/web/src/lib/utils.ts): Menambahkan fungsi utilitas detectPlatform yang akan menganalisa link/URL dan mendeteksi apakah itu link dari YouTube, TikTok, Instagram, Twitter (X), atau platform yang tidak dikenal.
+2. Dynamic Routing di API (apps/web/src/lib/api.ts): Fungsi api.resolve kini akan secara otomatis mengarahkan request ke endpoint backend yang sesuai (misal: /v1/tiktok/resolve jika link TikTok, atau /v1/youtube/resolve jika YouTube) berdasarkan platform yang terdeteksi.
+3. Pembaruan UI Input Bar (apps/web/src/components/shared/InputBar.tsx): Begitu user menempelkan link (via tombol Paste atau keyboard),
+sistem akan langsung membaca link tersebut dan:
+  * Mengganti ikon utama di sebelah kiri (misal: ikon YouTube menjadi ikon TikTok atau Instagram).
+  * Menyesuaikan teks petunjuk (placeholder) di dalam input kolom sesuai dengan platformnya.
+  * Tombol resolve sekarang juga akan menyesuaikan proses backend secara otomatis tanpa intervensi user.

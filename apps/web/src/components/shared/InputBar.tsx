@@ -6,9 +6,14 @@ import {
   Clipboard,
   DownloadSimple,
   WarningCircle,
+  YoutubeLogo,
+  TiktokLogo,
+  InstagramLogo,
+  XLogo,
 } from "@phosphor-icons/react";
 import DownloadModal from "./DownloadModal";
 import { api, type ResolveResponse } from "@/lib/api";
+import { detectPlatform } from "@/lib/utils";
 
 export default function InputBar() {
   const [url, setUrl] = useState("");
@@ -80,20 +85,45 @@ export default function InputBar() {
     }
   };
 
+  const platform = detectPlatform(url);
+  let PlatformIcon = LinkSimpleHorizontal;
+  let placeholderText = "Paste your link here...";
+
+  switch (platform) {
+    case "youtube":
+      PlatformIcon = YoutubeLogo;
+      placeholderText = "Paste your YouTube URL here...";
+      break;
+    case "tiktok":
+      PlatformIcon = TiktokLogo;
+      placeholderText = "Paste your TikTok URL here...";
+      break;
+    case "instagram":
+      PlatformIcon = InstagramLogo;
+      placeholderText = "Paste your Instagram URL here...";
+      break;
+    case "x":
+      PlatformIcon = XLogo;
+      placeholderText = "Paste your X/Twitter URL here...";
+      break;
+  }
+
   return (
     <>
       <div className="relative w-full max-w-[640px] mx-auto group">
         <div className="flex flex-col gap-4">
           {/* Input Bar */}
           <div className="flex items-center bg-white dark:bg-slate-900 border border-primary/20 rounded-xl p-2 shadow-xl shadow-primary/5 focus-within:ring-2 focus-within:ring-primary/30 transition-all">
-            <LinkSimpleHorizontal
+            <PlatformIcon
               size={20}
               weight="fill"
-              className="text-slate-400 ml-3 flex-shrink-0"
+              className={`ml-3 flex-shrink-0 transition-colors ${
+                platform !== "unknown" ? "text-primary" : "text-slate-400"
+              }`}
             />
             <input
               className="flex-1 bg-transparent border-none focus:ring-0 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 px-4 py-3 text-base md:text-lg"
-              placeholder="Paste your YouTube URL here..."
+              placeholder={placeholderText}
               type="text"
               value={url}
               onChange={handleInputChange}

@@ -21,3 +21,46 @@ export function truncateText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength)}...`;
 }
+
+export type Platform = "youtube" | "tiktok" | "instagram" | "x" | "unknown";
+
+export function detectPlatform(url: string): Platform {
+  if (!url) return "unknown";
+  
+  try {
+    const parsedUrl = new URL(url.trim());
+    const hostname = parsedUrl.hostname.toLowerCase();
+
+    if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) {
+      return "youtube";
+    }
+    if (hostname.includes("tiktok.com")) {
+      return "tiktok";
+    }
+    if (hostname.includes("instagram.com")) {
+      return "instagram";
+    }
+    if (hostname.includes("twitter.com") || hostname.includes("x.com")) {
+      return "x";
+    }
+    
+    return "unknown";
+  } catch {
+    // If URL parsing fails, fallback to simple string matching
+    const lowerUrl = url.toLowerCase();
+    if (lowerUrl.includes("youtube.com") || lowerUrl.includes("youtu.be")) {
+      return "youtube";
+    }
+    if (lowerUrl.includes("tiktok.com")) {
+      return "tiktok";
+    }
+    if (lowerUrl.includes("instagram.com")) {
+      return "instagram";
+    }
+    if (lowerUrl.includes("twitter.com") || lowerUrl.includes("x.com")) {
+      return "x";
+    }
+    
+    return "unknown";
+  }
+}

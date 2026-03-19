@@ -1,3 +1,5 @@
+import { detectPlatform } from "./utils";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
 export interface ResolveFormat {
@@ -56,11 +58,16 @@ export async function fetcher<T>(endpoint: string, options?: RequestInit): Promi
 export const api = {
   health: () => fetcher<{ ok: boolean; service: string; time: string }>("/healthz"),
 
-  resolve: (url: string) =>
-    fetcher<ResolveResponse>("/v1/youtube/resolve", {
+  resolve: (url: string) => {
+    const platform = detectPlatform(url);
+    if (platform === "unknown") {
+      throw new Error("Unsupported or invalid social media URL.");
+    }
+    return fetcher<ResolveResponse>(`/v1/${platform}/resolve`, {
       method: "POST",
       body: JSON.stringify({ url }),
-    }),
+    });
+  },
 
   createMp3Job: (url: string) =>
     fetcher<CreateMp3JobResponse>("/v1/jobs/mp3", {
