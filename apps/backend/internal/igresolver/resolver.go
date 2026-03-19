@@ -369,7 +369,9 @@ func (r *Resolver) selectFormats(raw []ytdlpFormat) []Format {
 	bestByHeight := make(map[int]Format)
 
 	for _, item := range raw {
-		if !isProgressiveMP4(item) && !isLikelyInstagramDirectMP4(item) {
+		// We prioritize progressive (v+a) or direct MP4s, but also accept video-only MP4s
+		// as yt-dlp might fail to find a merged progressive stream for some Reels.
+		if !isProgressiveMP4(item) && !isLikelyInstagramDirectMP4(item) && !isVideoOnlyMP4(item) {
 			continue
 		}
 		if item.Height <= 0 || item.Height > r.maxQuality {
@@ -458,6 +460,19 @@ func isLikelyInstagramDirectMP4(item ytdlpFormat) bool {
 	}
 
 	return true
+}
+
+func isVideoOnlyMP4(item ytdlpFormat) bool {
+	if strings.ToLower(item.Ext) != "mp4" {
+		return false
+	}
+	if item.URL == "" || item.Height <= 0 {
+		return false
+	}
+	// Has video but no audio
+	vcodec := strings.ToLower(strings.TrimSpace(item.VideoCodec))
+	acodec := strings.ToLower(strings.TrimSpace(item.AudioCodec))
+	return vcodec != "" && vcodec != "none" && (acodec == "" || acodec == "none")
 }
 
 func chooseThumbnail(payload ytdlpOutput) string {
