@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Download, YoutubeLogo, TiktokLogo, InstagramLogo, XLogo, WarningCircle } from "@phosphor-icons/react";
+import { X, Download, YoutubeLogo, TiktokLogo, InstagramLogo, XLogo, WarningCircle, MusicNotes } from "@phosphor-icons/react";
 import { api, type ResolveFormat, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
@@ -13,6 +13,7 @@ interface DownloadModalProps {
   result: ResolveResponse | null;
   isLoading?: boolean;
   onConfirmDownload: (formatId: string) => void;
+  onConfirmMp3: () => void;
 }
 
 function parseQualityToHeight(quality: string): number {
@@ -311,6 +312,28 @@ export default function DownloadModal({
                 </span>
               </div>
             )}
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              Audio (MP3)
+            </h4>
+            <button
+              onClick={onConfirmMp3}
+              disabled={!sourceUrl || isLoading}
+              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/60 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                  <MusicNotes size={20} weight="bold" />
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-slate-800 dark:text-slate-100">MP3 Audio</p>
+                  <p className="text-xs text-slate-500">128kbps • Queue processing</p>
+                </div>
+              </div>
+              <Download size={20} className="text-slate-400 group-hover:text-primary transition-colors" />
+            </button>
           </div>
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800">

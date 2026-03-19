@@ -103,6 +103,22 @@ export default function InputBar() {
     }, 2500);
   };
 
+  const startMp3Download = async () => {
+    if (!resolvedUrl) return;
+
+    setIsModalOpen(false);
+    setIsProcessingModalOpen(true);
+
+    try {
+      await api.createMp3Job(resolvedUrl);
+      // For MP3, we might want to keep the modal open to show "Done" status
+      // In a real app, you'd poll for status, but here we just mock the "Done" state in ProcessingModal
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to start MP3 conversion.");
+      setIsProcessingModalOpen(false);
+    }
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextValue = e.target.value;
     setUrl(nextValue);
@@ -207,6 +223,7 @@ export default function InputBar() {
         result={resolveResult}
         isLoading={isLoading}
         onConfirmDownload={startFinalDownload}
+        onConfirmMp3={startMp3Download}
       />
 
       <ProcessingModal 

@@ -432,7 +432,7 @@ func isLikelyInstagramDirectMP4(item ytdlpFormat) bool {
 	if strings.ToLower(item.Ext) != "mp4" {
 		return false
 	}
-	if item.URL == "" || item.Height <= 0 {
+	if item.URL == "" {
 		return false
 	}
 	if strings.TrimSpace(item.VideoCodec) != "" || strings.TrimSpace(item.AudioCodec) != "" {
