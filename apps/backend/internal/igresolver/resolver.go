@@ -371,7 +371,9 @@ func (r *Resolver) selectFormats(raw []ytdlpFormat) []Format {
 	for _, item := range raw {
 		// We prioritize progressive (v+a) or direct MP4s, but also accept video-only MP4s
 		// as yt-dlp might fail to find a merged progressive stream for some Reels.
-		if !isProgressiveMP4(item) && !isLikelyInstagramDirectMP4(item) && !isVideoOnlyMP4(item) {
+		// Instagram now primarily serves DASH video-only formats (dash-video-xxx),
+		// so we also accept those via isDashVideoMP4.
+		if !isProgressiveMP4(item) && !isLikelyInstagramDirectMP4(item) && !isVideoOnlyMP4(item) && !isDashVideoMP4(item) {
 			continue
 		}
 		if item.Height <= 0 || item.Height > r.maxQuality {
@@ -473,6 +475,48 @@ func isVideoOnlyMP4(item ytdlpFormat) bool {
 	vcodec := strings.ToLower(strings.TrimSpace(item.VideoCodec))
 	acodec := strings.ToLower(strings.TrimSpace(item.AudioCodec))
 	return vcodec != "" && vcodec != "none" && (acodec == "" || acodec == "none")
+}
+
+// isDashVideoMP4 matches Instagram DASH video-only MP4 segments.
+// Instagram now primarily serves video via DASH with format IDs prefixed "dash-".
+// These are valid downloadable video-only MP4 files served over HTTP(S).
+func isDashVideoMP4(item ytdlpFormat) bool {
+	formatID := strings.ToLower(strings.TrimSpace(item.FormatID))
+	if !strings.HasPrefix(formatID, "dash-") {
+		return false
+	}
+	if strings.ToLower(item.Ext) != "mp4" {
+		return false
+	}
+	if item.URL == "" || item.Height <= 0 {
+		return false
+	}
+
+	// Must use HTTP(S) protocol, not m3u8/HLS.
+	protocol := strings.ToLower(strings.TrimSpace(item.Protocol))
+	if protocol != "" && protocol != "https" && protocol != "http" {
+		return false
+	}
+
+	// Reject audio-only DASH segments.
+	vcodec := strings.ToLower(strings.TrimSpace(item.VideoCodec))
+	acodec := strings.ToLower(strings.TrimSpace(item.AudioCodec))
+
+	// If codec metadata is present, video codec must exist and audio must be absent.
+	if vcodec != "" && vcodec == "none" {
+		return false
+	}
+	if acodec != "" && acodec != "none" {
+		return false
+	}
+
+	// Reject formats whose format_note indicates audio-only.
+	note := strings.ToLower(strings.TrimSpace(item.FormatNote))
+	if strings.Contains(note, "audio") && !strings.Contains(note, "video") {
+		return false
+	}
+
+	return true
 }
 
 func chooseThumbnail(payload ytdlpOutput) string {

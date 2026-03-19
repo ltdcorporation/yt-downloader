@@ -546,7 +546,7 @@ func TestResolve_ResponseEdgeCases(t *testing.T) {
 		payload := ytdlpOutput{
 			Title: "No Progressive",
 			Formats: []ytdlpFormat{
-				{FormatID: "137", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", URL: "https://video-cdn.example/137.mp4", Height: 1080},
+				{FormatID: "137", Ext: "webm", VideoCodec: "vp9", AudioCodec: "none", URL: "https://video-cdn.example/137.webm", Height: 1080},
 			},
 		}
 		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
@@ -677,6 +677,145 @@ func TestSelectFormats_AcceptsInstagramDirectHTTPMP4Fallback(t *testing.T) {
 	}
 	if formats[0].ID != "http-256" || formats[1].ID != "http-832" {
 		t.Fatalf("unexpected format IDs: %#v", formats)
+	}
+}
+
+func TestIsDashVideoMP4(t *testing.T) {
+	tests := []struct {
+		name string
+		in   ytdlpFormat
+		want bool
+	}{
+		{
+			name: "valid dash video mp4 with codec",
+			in: ytdlpFormat{
+				FormatID:   "dash-video-1",
+				Ext:        "mp4",
+				VideoCodec: "avc1.64001F",
+				AudioCodec: "none",
+				Protocol:   "https",
+				Height:     720,
+				URL:        "https://scontent.cdninstagram.com/video.mp4",
+			},
+			want: true,
+		},
+		{
+			name: "valid dash video mp4 without codec metadata",
+			in: ytdlpFormat{
+				FormatID: "dash-video-2",
+				Ext:      "mp4",
+				Protocol: "https",
+				Height:   360,
+				URL:      "https://scontent.cdninstagram.com/video360.mp4",
+			},
+			want: true,
+		},
+		{
+			name: "dash audio segment rejected",
+			in: ytdlpFormat{
+				FormatID:   "dash-audio-128000",
+				Ext:        "mp4",
+				VideoCodec: "none",
+				AudioCodec: "mp4a.40.2",
+				Protocol:   "https",
+				Height:     0,
+				URL:        "https://scontent.cdninstagram.com/audio.mp4",
+			},
+			want: false,
+		},
+		{
+			name: "dash format with m3u8 protocol rejected",
+			in: ytdlpFormat{
+				FormatID:   "dash-video-3",
+				Ext:        "mp4",
+				VideoCodec: "avc1",
+				AudioCodec: "none",
+				Protocol:   "m3u8_native",
+				Height:     720,
+				URL:        "https://scontent.cdninstagram.com/video.m3u8",
+			},
+			want: false,
+		},
+		{
+			name: "non-dash format id",
+			in: ytdlpFormat{
+				FormatID:   "http-832",
+				Ext:        "mp4",
+				VideoCodec: "avc1",
+				AudioCodec: "none",
+				Protocol:   "https",
+				Height:     720,
+				URL:        "https://scontent.cdninstagram.com/video.mp4",
+			},
+			want: false,
+		},
+		{
+			name: "dash format with non-mp4 ext",
+			in: ytdlpFormat{
+				FormatID:   "dash-video-1",
+				Ext:        "webm",
+				VideoCodec: "vp9",
+				AudioCodec: "none",
+				Protocol:   "https",
+				Height:     720,
+				URL:        "https://scontent.cdninstagram.com/video.webm",
+			},
+			want: false,
+		},
+		{
+			name: "dash format with missing url",
+			in: ytdlpFormat{
+				FormatID:   "dash-video-1",
+				Ext:        "mp4",
+				VideoCodec: "avc1",
+				AudioCodec: "none",
+				Protocol:   "https",
+				Height:     720,
+			},
+			want: false,
+		},
+		{
+			name: "dash audio-only by format note",
+			in: ytdlpFormat{
+				FormatID:   "dash-audio-64",
+				Ext:        "mp4",
+				Protocol:   "https",
+				Height:     360,
+				URL:        "https://scontent.cdninstagram.com/audio.mp4",
+				FormatNote: "Audio",
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isDashVideoMP4(tc.in)
+			if got != tc.want {
+				t.Fatalf("unexpected result, got=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSelectFormats_AcceptsDashVideoMP4(t *testing.T) {
+	resolver := NewResolver("yt-dlp", "", 1080, 0, "", "", true)
+
+	formats := resolver.selectFormats([]ytdlpFormat{
+		{FormatID: "dash-video-1", Ext: "mp4", VideoCodec: "avc1.64001F", AudioCodec: "none", Protocol: "https", URL: "https://scontent.cdninstagram.com/360.mp4", Height: 360, Filesize: 1500},
+		{FormatID: "dash-video-2", Ext: "mp4", VideoCodec: "avc1.64001F", AudioCodec: "none", Protocol: "https", URL: "https://scontent.cdninstagram.com/720.mp4", Height: 720, Filesize: 3000},
+		{FormatID: "dash-audio-128000", Ext: "mp4", VideoCodec: "none", AudioCodec: "mp4a.40.2", Protocol: "https", URL: "https://scontent.cdninstagram.com/audio.mp4", Height: 0},
+		{FormatID: "hls-250", Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none", Protocol: "m3u8_native", URL: "https://scontent.cdninstagram.com/360.m3u8", Height: 360},
+	})
+
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 dash video formats, got %d (%#v)", len(formats), formats)
+	}
+	if formats[0].ID != "dash-video-1" || formats[1].ID != "dash-video-2" {
+		t.Fatalf("unexpected format IDs: %#v", formats)
+	}
+	if formats[0].Quality != "360p" || formats[1].Quality != "720p" {
+		t.Fatalf("unexpected qualities: %s, %s", formats[0].Quality, formats[1].Quality)
 	}
 }
 
