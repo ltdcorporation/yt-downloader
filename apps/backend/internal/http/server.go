@@ -433,6 +433,23 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "selected format is unavailable")
 				return
 			}
+
+			// Force download by setting Content-Disposition
+			filename := "video.mp4"
+			if strings.TrimSpace(result.Title) != "" {
+				// Simple cleanup of title for filename
+				cleanTitle := strings.Map(func(r rune) rune {
+					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+						return r
+					}
+					return '_'
+				}, result.Title)
+				if cleanTitle != "" {
+					filename = cleanTitle + ".mp4"
+				}
+			}
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
 			http.Redirect(w, r, format.URL, http.StatusFound)
 			return
 		}

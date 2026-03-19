@@ -60,6 +60,7 @@ export default function DownloadModal({
   isLoading,
 }: DownloadModalProps) {
   const [selectedFormatId, setSelectedFormatId] = useState("");
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const mp4Formats = useMemo(() => {
     const formats = (result?.formats || []).filter(
@@ -81,6 +82,7 @@ export default function DownloadModal({
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
+      setIsConfirming(false);
     }
 
     return () => {
@@ -113,16 +115,23 @@ export default function DownloadModal({
     return null;
   }
 
-  const handleDownload = () => {
+  const handleDownloadTrigger = () => {
+    if (!sourceUrl || !selectedFormat) {
+      return;
+    }
+    setIsConfirming(true);
+  };
+
+  const handleFinalDownload = () => {
     if (!sourceUrl || !selectedFormat) {
       return;
     }
 
     const downloadUrl = api.getMp4DownloadUrl(sourceUrl, selectedFormat.id);
-    const newTab = window.open(downloadUrl, "_blank", "noopener,noreferrer");
-    if (!newTab) {
-      window.location.href = downloadUrl;
-    }
+    // Trigger download in the same tab. Since backend sends Content-Disposition: attachment,
+    // the browser will just start the download without navigating away or opening a new tab.
+    window.location.href = downloadUrl;
+    setIsConfirming(false);
   };
 
   const hasFormats = mp4Formats.length > 0;
@@ -137,9 +146,42 @@ export default function DownloadModal({
       aria-labelledby="modal-title"
     >
       <div
-        className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] m-4"
+        className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] m-4 relative"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mock Confirmation Modal Overlay */}
+        {isConfirming && (
+          <div className="absolute inset-0 z-[10000] bg-white/90 dark:bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 max-w-sm w-full text-center">
+              <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Download size={32} weight="bold" className="text-primary" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">
+                Ready to Download?
+              </h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 leading-relaxed">
+                You are about to download <strong>{result?.title}</strong> in <strong>{selectedFormat?.quality}</strong>.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleFinalDownload}
+                  className="w-full bg-primary text-white py-4 rounded-xl font-bold hover:brightness-105 transition-all shadow-lg shadow-primary/20"
+                >
+                  Confirm & Start Download
+                </button>
+                <button
+                  onClick={() => setIsConfirming(false)}
+                  className="w-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 py-4 rounded-xl font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="mt-4 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                Mock Confirmation v1
+              </p>
+            </div>
+          </div>
+        )}
         <div className="px-6 md:px-8 pt-6 pb-4 flex justify-between items-center border-b border-slate-100 dark:border-slate-800">
           <h2 id="modal-title" className="text-xl md:text-2xl font-bold text-primary">
             Download Options
@@ -245,7 +287,7 @@ export default function DownloadModal({
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
             <button
-              onClick={handleDownload}
+              onClick={handleDownloadTrigger}
               disabled={!selectedFormat || !sourceUrl}
               className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:brightness-105 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -256,7 +298,7 @@ export default function DownloadModal({
             </button>
 
             <p className="text-center text-[11px] text-slate-400 mt-4 leading-relaxed px-4 md:px-12">
-              Download opens in a new tab and streams directly from provider source.
+              Downloads directly from source. No new tabs will be opened.
             </p>
           </div>
         </div>
