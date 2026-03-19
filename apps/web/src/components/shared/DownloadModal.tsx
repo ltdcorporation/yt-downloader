@@ -61,8 +61,9 @@ export default function DownloadModal({
   sourceUrl,
   result,
   isLoading,
-    onConfirmDownload,
-  }: DownloadModalProps) {
+  onConfirmDownload,
+  onConfirmMp3,
+}: DownloadModalProps) {
     const [selectedFormatId, setSelectedFormatId] = useState("");
     const [isConfirming, setIsConfirming] = useState(false);
   
