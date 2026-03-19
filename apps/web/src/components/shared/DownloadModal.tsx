@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Download, YoutubeLogo, TiktokLogo, InstagramLogo, XLogo, WarningCircle, MusicNotes } from "@phosphor-icons/react";
-import { api, type ResolveFormat, type ResolveResponse } from "@/lib/api";
+import { type ResolveFormat, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
 interface DownloadModalProps {
@@ -14,6 +14,7 @@ interface DownloadModalProps {
   isLoading?: boolean;
   onConfirmDownload: (formatId: string) => void;
   onConfirmMp3: () => void;
+  onRetryResolve?: () => void;
 }
 
 function parseQualityToHeight(quality: string): number {
@@ -63,6 +64,7 @@ export default function DownloadModal({
   isLoading,
   onConfirmDownload,
   onConfirmMp3,
+  onRetryResolve,
 }: DownloadModalProps) {
     const [selectedFormatId, setSelectedFormatId] = useState("");
     const [isConfirming, setIsConfirming] = useState(false);
@@ -306,11 +308,47 @@ export default function DownloadModal({
                 })}
               </div>
             ) : (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3 text-sm flex items-start gap-2">
-                <WarningCircle size={18} className="mt-0.5 flex-shrink-0" />
-                <span>
-                  No MP4 download options found for this URL. Try another public {platformLabel} video.
-                </span>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                <div className="flex items-start gap-2">
+                  <WarningCircle size={18} className="mt-0.5 flex-shrink-0 text-amber-700" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold">Tidak menemukan opsi MP4</p>
+                    <p className="mt-1">
+                      Coba gunakan video {platformLabel} publik lain, atau resolve ulang.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onRetryResolve?.();
+                    }}
+                    className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-lg shadow-primary/20 hover:brightness-105 transition-all"
+                  >
+                    Resolve ulang
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex items-center justify-center rounded-xl bg-white/70 px-4 py-2.5 font-bold text-amber-800 border border-amber-200 hover:bg-white transition-all"
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-amber-200/70 bg-white/60 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                    Troubleshooting
+                  </p>
+                  <ul className="mt-2 list-disc pl-5 text-amber-900/90 space-y-1">
+                    <li>Pastikan link video (bukan playlist).</li>
+                    <li>Video private/age-restricted bisa gagal ter-resolve.</li>
+                    <li>Kalau video terlalu panjang/berat, coba video yang lebih singkat.</li>
+                  </ul>
+                </div>
               </div>
             )}
           </div>

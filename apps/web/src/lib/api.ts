@@ -1,6 +1,9 @@
 import { detectPlatform } from "./utils";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8080";
 
 export interface ResolveFormat {
   id: string;
@@ -66,6 +69,9 @@ export const api = {
     const platform = detectPlatform(url);
     if (platform === "unknown") {
       throw new Error("Unsupported or invalid social media URL.");
+    }
+    if (platform !== "youtube") {
+      throw new Error("Only YouTube URLs are supported right now.");
     }
     return fetcher<ResolveResponse>(`/v1/${platform}/resolve`, {
       method: "POST",

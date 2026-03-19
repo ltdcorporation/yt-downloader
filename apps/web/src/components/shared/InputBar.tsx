@@ -19,11 +19,48 @@ import { detectPlatform } from "@/lib/utils";
 export default function InputBar() {
   const [url, setUrl] = useState("");
   const [resolvedUrl, setResolvedUrl] = useState("");
-  const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(null);
+  const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(
+    null,
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [lastAttemptUrl, setLastAttemptUrl] = useState("");
+
+  const troubleshootingItems = (() => {
+    if (!errorMessage) return [];
+
+    const message = errorMessage.toLowerCase();
+    const items: string[] = [];
+
+    items.push(
+      "Pastikan link YouTube (watch / youtu.be / shorts), bukan playlist.",
+    );
+    items.push("Pastikan backend API berjalan di http://localhost:8080.");
+
+    if (message.includes("only youtube")) {
+      items.push(
+        "Saat ini hanya YouTube yang didukung (TikTok/IG/X belum aktif di backend).",
+      );
+    }
+    if (message.includes("rate limit")) {
+      items.push("Tunggu beberapa detik lalu coba lagi (kena rate limit).");
+    }
+    if (message.includes("live")) {
+      items.push("Video live/upcoming tidak didukung. Coba video biasa.");
+    }
+    if (message.includes("playlist")) {
+      items.push("Playlist tidak didukung. Pakai link video tunggal.");
+    }
+    if (message.includes("failed to fetch") || message.includes("network")) {
+      items.push(
+        "Cek koneksi internet dan CORS (Origin localhost:3000 harus di-allow).",
+      );
+    }
+
+    return items;
+  })();
 
   const handleProcess = async (rawInput?: string) => {
     const targetUrl = (rawInput ?? url).trim();
@@ -35,6 +72,7 @@ export default function InputBar() {
 
     setErrorMessage("");
     setIsLoading(true);
+    setLastAttemptUrl(targetUrl);
 
     try {
       const result = await api.resolve(targetUrl);
@@ -87,7 +125,7 @@ export default function InputBar() {
     // Mock delay for "processing" then trigger real download
     setTimeout(() => {
       const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, formatId);
-      
+
       // Trigger download using an anchor element with 'download' attribute
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -95,7 +133,7 @@ export default function InputBar() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       // Keep processing modal for a bit longer to show "Done" status
       setTimeout(() => {
         setIsProcessingModalOpen(false);
@@ -114,7 +152,11 @@ export default function InputBar() {
       // For MP3, we might want to keep the modal open to show "Done" status
       // In a real app, you'd poll for status, but here we just mock the "Done" state in ProcessingModal
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to start MP3 conversion.");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to start MP3 conversion.",
+      );
       setIsProcessingModalOpen(false);
     }
   };
@@ -208,9 +250,50 @@ export default function InputBar() {
           </button>
 
           {errorMessage ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm flex items-start gap-2">
-              <WarningCircle size={18} className="mt-0.5 flex-shrink-0" />
-              <span>{errorMessage}</span>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-800">
+              <div className="flex items-start gap-2">
+                <WarningCircle
+                  size={18}
+                  className="mt-0.5 flex-shrink-0 text-rose-700"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold">Gagal memproses link</p>
+                  <p className="mt-1 break-words">{errorMessage}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleProcess(lastAttemptUrl || url)}
+                  disabled={isLoading || !(lastAttemptUrl || url).trim()}
+                  className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-lg shadow-primary/20 hover:brightness-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Coba lagi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage("");
+                  }}
+                  className="inline-flex items-center justify-center rounded-xl bg-white/70 px-4 py-2.5 font-bold text-rose-700 border border-rose-200 hover:bg-white transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              {troubleshootingItems.length > 0 ? (
+                <div className="mt-4 rounded-xl border border-rose-200/70 bg-white/60 px-4 py-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-rose-700">
+                    Troubleshooting
+                  </p>
+                  <ul className="mt-2 list-disc pl-5 text-rose-800/90 space-y-1">
+                    {troubleshootingItems.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -224,10 +307,11 @@ export default function InputBar() {
         isLoading={isLoading}
         onConfirmDownload={startFinalDownload}
         onConfirmMp3={startMp3Download}
+        onRetryResolve={() => void handleProcess(resolvedUrl || url)}
       />
 
-      <ProcessingModal 
-        isOpen={isProcessingModalOpen} 
+      <ProcessingModal
+        isOpen={isProcessingModalOpen}
         title={resolveResult?.title}
       />
     </>
