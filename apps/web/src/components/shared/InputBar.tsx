@@ -109,8 +109,15 @@ export default function InputBar() {
     // Mock delay for "processing" then trigger real download
     setTimeout(() => {
       const downloadUrl = api.getMp4DownloadUrl(resolvedUrl, formatId);
-      window.location.href = downloadUrl;
-
+      
+      // Trigger download using an anchor element with 'download' attribute
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.setAttribute("download", "");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
       // Keep processing modal for a bit longer to show "Done" status
       setTimeout(() => {
         setIsProcessingModalOpen(false);
