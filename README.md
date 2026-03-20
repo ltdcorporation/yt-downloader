@@ -123,6 +123,7 @@ GET  /admin/jobs            (basic auth)
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
 - Auth endpoints issue cryptographically random session tokens, persist only token hash in storage, and set HttpOnly cookie (`AUTH_SESSION_COOKIE_*` vars).
 - Google login endpoint (`/v1/auth/google`) validates Google ID token server-side; set `GOOGLE_CLIENT_IDS` (comma-separated) or `GOOGLE_CLIENT_ID`.
+- Frontend Google flow requires `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (must match one audience accepted by backend).
 - Frontend defaults to Next.js proxy route (`/api/*`) to avoid CORS/cookie mismatch between `localhost:3000` and backend ports.
 - API resolves `YTDLP_BINARY` from `PATH` (`yt-dlp` by default), so runtime is not tied to one fixed absolute path.
 - X resolver supports multi-cookie fallback via `X_COOKIES_FILES` (comma-separated files) and/or `X_COOKIES_DIR` (directory scan). Public attempt can be toggled with `X_RESOLVE_TRY_WITHOUT_COOKIES`.

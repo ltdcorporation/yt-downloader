@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   X,
   EnvelopeSimple,
@@ -12,11 +12,24 @@ import {
 } from "@phosphor-icons/react";
 import { api, APIError } from "@/lib/api";
 import { persistAuthSession } from "@/lib/auth-session";
+import {
+  hasGoogleClientID,
+  requestGoogleIDToken,
+  warmupGoogleIdentity,
+} from "@/lib/google-identity";
 
 function resolveLoginErrorMessage(error: APIError): string {
   switch (error.code) {
     case "invalid_credentials":
       return "Email atau password salah.";
+    case "google_auth_unavailable":
+      return "Google login belum dikonfigurasi di server.";
+    case "google_token_invalid":
+      return "Token Google tidak valid. Coba login ulang.";
+    case "google_email_unverified":
+      return "Email Google kamu belum terverifikasi.";
+    case "google_identity_conflict":
+      return "Akun Google ini sudah terhubung ke user lain.";
     default:
       return error.message || "Login gagal. Coba lagi.";
   }
@@ -38,7 +51,20 @@ export default function LoginModal({
   const [showPassword, setShowPassword] = useState(false);
   const [keepLoggedIn, setKeepLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  const isGoogleConfigured = hasGoogleClientID();
+
+  useEffect(() => {
+    if (!isOpen || !isGoogleConfigured) {
+      return;
+    }
+
+    void warmupGoogleIdentity().catch(() => {
+      // Keep UI responsive; detailed error is shown during explicit login click.
+    });
+  }, [isOpen, isGoogleConfigured]);
 
   if (!isOpen) {
     return null;
@@ -50,6 +76,7 @@ export default function LoginModal({
     setShowPassword(false);
     setKeepLoggedIn(false);
     setIsLoading(false);
+    setIsGoogleLoading(false);
     setErrorMessage("");
   };
 
@@ -61,7 +88,7 @@ export default function LoginModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (isLoading) {
+    if (isLoading || isGoogleLoading) {
       return;
     }
 
@@ -87,6 +114,41 @@ export default function LoginModal({
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (isLoading || isGoogleLoading) {
+      return;
+    }
+
+    if (!isGoogleConfigured) {
+      setErrorMessage("Google login belum dikonfigurasi di frontend.");
+      return;
+    }
+
+    setErrorMessage("");
+    setIsGoogleLoading(true);
+
+    try {
+      const idToken = await requestGoogleIDToken();
+      const auth = await api.loginWithGoogle({
+        idToken,
+        keepLoggedIn,
+      });
+      persistAuthSession(auth, keepLoggedIn);
+      window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
+      handleClose();
+    } catch (error) {
+      if (error instanceof APIError) {
+        setErrorMessage(resolveLoginErrorMessage(error));
+      } else {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Login Google gagal.",
+        );
+      }
+    } finally {
+      setIsGoogleLoading(false);
     }
   };
 
@@ -236,7 +298,7 @@ export default function LoginModal({
           <button
             className="w-full mt-2 py-3.5 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors flex justify-center items-center gap-2 shadow-[0_4px_14px_0_rgba(128,126,152,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
             type="submit"
-            disabled={isLoading || !email || !password}
+            disabled={isLoading || isGoogleLoading || !email || !password}
           >
             {isLoading ? (
               <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -277,12 +339,26 @@ export default function LoginModal({
 
         {/* Google Button */}
         <button
-          className="w-full py-3 bg-primary text-white font-medium rounded-lg hover:brightness-110 transition-colors flex justify-center items-center gap-2 text-sm shadow-[0_4px_14px_0_rgba(128,126,152,0.39)]"
+          className="w-full py-3 bg-primary text-white font-medium rounded-lg hover:brightness-110 transition-colors flex justify-center items-center gap-2 text-sm shadow-[0_4px_14px_0_rgba(128,126,152,0.39)] disabled:opacity-60 disabled:cursor-not-allowed"
           type="button"
+          onClick={handleGoogleLogin}
+          disabled={!isGoogleConfigured || isLoading || isGoogleLoading}
         >
-          <GoogleLogo size={20} weight="fill" />
-          Google
+          {isGoogleLoading ? (
+            <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <>
+              <GoogleLogo size={20} weight="fill" />
+              Continue with Google
+            </>
+          )}
         </button>
+
+        {!isGoogleConfigured ? (
+          <p className="mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
+            Google login belum aktif (NEXT_PUBLIC_GOOGLE_CLIENT_ID kosong).
+          </p>
+        ) : null}
       </div>
     </div>
   );
