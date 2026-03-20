@@ -3,7 +3,6 @@ package igresolver
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -320,11 +319,14 @@ func TestResolve_PublicModeSuccess(t *testing.T) {
 	if result.CookieProfile != "" {
 		t.Fatalf("expected empty cookie profile for public mode, got %q", result.CookieProfile)
 	}
-	if len(result.Formats) != 1 {
-		t.Fatalf("expected 1 progressive format, got %d", len(result.Formats))
+	if len(result.Formats) != 2 {
+		t.Fatalf("expected 2 downloadable formats, got %d", len(result.Formats))
 	}
-	if result.Formats[0].ID != "22" || result.Formats[0].Type != "mp4" {
-		t.Fatalf("unexpected format payload: %#v", result.Formats[0])
+	if result.Formats[0].ID != "22" || result.Formats[1].ID != "137" {
+		t.Fatalf("unexpected format payload: %#v", result.Formats)
+	}
+	if result.Formats[0].Type != "mp4" || result.Formats[1].Type != "mp4" {
+		t.Fatalf("expected mp4 format types, got %#v", result.Formats)
 	}
 }
 
@@ -473,7 +475,7 @@ func TestResolve_FailureWrappingByCandidateCount(t *testing.T) {
 		}
 	})
 
-	t.Run("non-retryable typed error bypasses aggregate wrapping", func(t *testing.T) {
+	t.Run("hls candidate is treated as downloadable video format", func(t *testing.T) {
 		dir := t.TempDir()
 		fileA := filepath.Join(dir, "acc-a.txt")
 		fileB := filepath.Join(dir, "acc-b.txt")
@@ -493,19 +495,15 @@ func TestResolve_FailureWrappingByCandidateCount(t *testing.T) {
 		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
 
 		resolver := NewResolver(script, "", 1080, 0, "", fileA+","+fileB, false)
-		_, err := resolver.Resolve(context.Background(), "https://instagram.com/reel/ABC123")
-		if err == nil {
-			t.Fatal("expected typed error")
+		result, err := resolver.Resolve(context.Background(), "https://instagram.com/reel/ABC123")
+		if err != nil {
+			t.Fatalf("expected resolve success, got %v", err)
 		}
-		if strings.Contains(err.Error(), "failed to resolve Instagram URL with") {
-			t.Fatalf("typed non-retryable error should not be wrapped, got %v", err)
+		if result.CookieProfile != "acc-a" {
+			t.Fatalf("expected first cookie profile acc-a, got %q", result.CookieProfile)
 		}
-		var resolveErr *ResolveError
-		if !errors.As(err, &resolveErr) {
-			t.Fatalf("expected typed resolve error, got %T: %v", err, err)
-		}
-		if resolveErr.Code != ErrCodeIGHLSOnlyNotSupported {
-			t.Fatalf("expected code %q, got %q", ErrCodeIGHLSOnlyNotSupported, resolveErr.Code)
+		if len(result.Formats) != 1 || result.Formats[0].ID != "hls-250" {
+			t.Fatalf("unexpected formats: %#v", result.Formats)
 		}
 	})
 }
@@ -558,7 +556,7 @@ func TestResolve_ResponseEdgeCases(t *testing.T) {
 		}
 	})
 
-	t.Run("hls-only source returns typed unsupported error", func(t *testing.T) {
+	t.Run("hls-only source is treated as downloadable format", func(t *testing.T) {
 		payload := ytdlpOutput{
 			Title: "HLS Only",
 			Formats: []ytdlpFormat{
@@ -569,19 +567,15 @@ func TestResolve_ResponseEdgeCases(t *testing.T) {
 		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
 		resolver := NewResolver(script, "", 1080, 0, "", "", true)
 
-		_, err := resolver.Resolve(context.Background(), "https://instagram.com/reel/ABC123")
-		if err == nil {
-			t.Fatal("expected hls-only error")
+		result, err := resolver.Resolve(context.Background(), "https://instagram.com/reel/ABC123")
+		if err != nil {
+			t.Fatalf("expected resolve success, got %v", err)
 		}
-		var resolveErr *ResolveError
-		if !errors.As(err, &resolveErr) {
-			t.Fatalf("expected typed resolve error, got %T: %v", err, err)
+		if len(result.Formats) != 1 {
+			t.Fatalf("expected 1 selected video format, got %d (%#v)", len(result.Formats), result.Formats)
 		}
-		if resolveErr.Code != ErrCodeIGHLSOnlyNotSupported {
-			t.Fatalf("expected code %q, got %q", ErrCodeIGHLSOnlyNotSupported, resolveErr.Code)
-		}
-		if !strings.Contains(strings.ToLower(resolveErr.Error()), "hls-only") {
-			t.Fatalf("expected hls-only message, got %v", resolveErr)
+		if result.Formats[0].ID != "hls-250" {
+			t.Fatalf("unexpected selected format: %#v", result.Formats)
 		}
 	})
 

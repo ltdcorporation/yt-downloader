@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -991,19 +992,33 @@ func TestHandleRedirectMP4(t *testing.T) {
 	})
 
 	t.Run("success", func(t *testing.T) {
+		upstreamBody := []byte("fake-mp4-bytes")
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "video/mp4")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(upstreamBody)
+		}))
+		defer upstream.Close()
+
 		cfg := baseTestConfig()
-		resolver := &fakeResolver{result: youtube.ResolveResult{Formats: []youtube.Format{{ID: "18", Type: "mp4", URL: "https://cdn.example/video-18.mp4"}, {ID: "mp3-128", Type: "mp3"}}}}
+		resolver := &fakeResolver{result: youtube.ResolveResult{Title: "Video 18", Formats: []youtube.Format{{ID: "18", Type: "mp4", URL: upstream.URL + "/video-18.mp4"}, {ID: "mp3-128", Type: "mp3"}}}}
 		server := newTestServer(t, cfg, resolver, &fakeQueue{}, newFakeJobStore())
 
 		req := httptest.NewRequest(http.MethodGet, "/v1/download/mp4?url=https://www.youtube.com/watch?v=abc123&format_id=18", nil)
 		rec := httptest.NewRecorder()
 		server.Handler().ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusFound {
-			t.Fatalf("expected 302, got %d body=%s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 		}
-		if got := rec.Header().Get("Location"); got != "https://cdn.example/video-18.mp4" {
-			t.Fatalf("unexpected redirect location: %s", got)
+		if got := rec.Header().Get("Content-Type"); got != "video/mp4" {
+			t.Fatalf("unexpected content type: %s", got)
+		}
+		if !strings.Contains(rec.Header().Get("Content-Disposition"), `attachment;`) {
+			t.Fatalf("expected attachment content-disposition, got %q", rec.Header().Get("Content-Disposition"))
+		}
+		if body := rec.Body.Bytes(); string(body) != string(upstreamBody) {
+			t.Fatalf("unexpected proxied body: %q", string(body))
 		}
 	})
 }
