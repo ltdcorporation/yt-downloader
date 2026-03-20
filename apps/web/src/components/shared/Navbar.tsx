@@ -1,15 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { TrayArrowDown, List } from "@phosphor-icons/react";
 import LoginModal from "./LoginModal";
 import SignupModal from "./SignupModal";
+import { api, APIError, type AuthUser } from "@/lib/api";
+import {
+  clearAuthSessionSnapshot,
+  readAuthSessionSnapshot,
+} from "@/lib/auth-session";
 
 export default function Navbar() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
+  const userInitial = useMemo(() => {
+    if (!currentUser?.full_name) {
+      return "?";
+    }
+    return currentUser.full_name.charAt(0).toUpperCase();
+  }, [currentUser]);
+
+  const refreshAuthState = useCallback(async () => {
+    try {
+      const me = await api.me();
+      setCurrentUser(me.user);
+    } catch (error) {
+      if (error instanceof APIError && error.code === "invalid_session") {
+        clearAuthSessionSnapshot();
+      }
+      setCurrentUser(null);
+    } finally {
+      setIsAuthChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const snapshot = readAuthSessionSnapshot();
+    if (snapshot?.user) {
+      setCurrentUser(snapshot.user);
+    }
+
+    void refreshAuthState();
+
+    const handleAuthChange = () => {
+      void refreshAuthState();
+    };
+
+    window.addEventListener("quicksnap:auth-changed", handleAuthChange);
+    return () => {
+      window.removeEventListener("quicksnap:auth-changed", handleAuthChange);
+    };
+  }, [refreshAuthState]);
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // noop: logout must be idempotent from user perspective.
+    }
+
+    clearAuthSessionSnapshot();
+    setCurrentUser(null);
+    setIsDrawerOpen(false);
+  };
 
   return (
     <>
@@ -18,7 +76,9 @@ export default function Navbar() {
           <div className="text-primary flex items-center justify-center">
             <TrayArrowDown size={28} weight="fill" className="sm:size-8" />
           </div>
-          <h2 className="text-primary text-lg sm:text-xl font-bold tracking-tight">QuickSnap</h2>
+          <h2 className="text-primary text-lg sm:text-xl font-bold tracking-tight">
+            QuickSnap
+          </h2>
         </div>
 
         {/* Desktop Navigation */}
@@ -44,19 +104,42 @@ export default function Navbar() {
         </nav>
 
         {/* Desktop Buttons */}
-        <div className="hidden md:flex gap-3">
-          <button
-            onClick={() => setIsLoginModalOpen(true)}
-            className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
-          >
-            Login
-          </button>
-          <button
-            onClick={() => setIsSignupModalOpen(true)}
-            className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all"
-          >
-            Sign Up
-          </button>
+        <div className="hidden md:flex gap-3 items-center">
+          {currentUser ? (
+            <>
+              <div className="flex items-center gap-2 rounded-lg border border-primary/15 px-3 py-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  {userInitial}
+                </div>
+                <span className="max-w-[180px] truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {currentUser.full_name}
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
+              >
+                Logout
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setIsLoginModalOpen(true)}
+                className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
+                disabled={isAuthChecking}
+              >
+                Login
+              </button>
+              <button
+                onClick={() => setIsSignupModalOpen(true)}
+                className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all disabled:opacity-60"
+                disabled={isAuthChecking}
+              >
+                Sign Up
+              </button>
+            </>
+          )}
         </div>
 
         {/* Mobile Hamburger Button */}
@@ -123,24 +206,52 @@ export default function Navbar() {
 
               {/* Drawer Footer Buttons */}
               <div className="px-6 py-6 border-t border-primary/10 space-y-3">
-                <button
-                  onClick={() => {
-                    setIsDrawerOpen(false);
-                    setIsLoginModalOpen(true);
-                  }}
-                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => {
-                    setIsDrawerOpen(false);
-                    setIsSignupModalOpen(true);
-                  }}
-                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all"
-                >
-                  Sign Up
-                </button>
+                {currentUser ? (
+                  <>
+                    <div className="flex items-center gap-3 rounded-lg border border-primary/15 px-3 py-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                        {userInitial}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
+                          {currentUser.full_name}
+                        </p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                          {currentUser.email}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all"
+                    >
+                      Logout
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsDrawerOpen(false);
+                        setIsLoginModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all disabled:opacity-60"
+                      disabled={isAuthChecking}
+                    >
+                      Login
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsDrawerOpen(false);
+                        setIsSignupModalOpen(true);
+                      }}
+                      className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all disabled:opacity-60"
+                      disabled={isAuthChecking}
+                    >
+                      Sign Up
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -148,10 +259,24 @@ export default function Navbar() {
       )}
 
       {/* Login Modal */}
-      <LoginModal isOpen={isLoginModalOpen} onClose={() => setIsLoginModalOpen(false)} />
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSwitchToSignup={() => {
+          setIsLoginModalOpen(false);
+          setIsSignupModalOpen(true);
+        }}
+      />
 
       {/* Signup Modal */}
-      <SignupModal isOpen={isSignupModalOpen} onClose={() => setIsSignupModalOpen(false)} />
+      <SignupModal
+        isOpen={isSignupModalOpen}
+        onClose={() => setIsSignupModalOpen(false)}
+        onSwitchToLogin={() => {
+          setIsSignupModalOpen(false);
+          setIsLoginModalOpen(true);
+        }}
+      />
     </>
   );
 }

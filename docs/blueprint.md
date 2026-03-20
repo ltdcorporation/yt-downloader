@@ -17,7 +17,8 @@
 
 ## Non-Functional Limits
 
-- No login for public users
+- Public download flow remains accessible without login
+- Optional account auth (register/login/session) for personalization and future features
 - Rate limit: 3 requests/second/IP
 - Video duration: max 60 minutes
 - Output size: max 1 GB/request
@@ -39,6 +40,10 @@
 ## API Intent (MVP)
 
 - `GET /healthz`
+- `POST /v1/auth/register`
+- `POST /v1/auth/login`
+- `GET /v1/auth/me`
+- `POST /v1/auth/logout`
 - `POST /v1/youtube/resolve`
 - `POST /v1/x/resolve`
 - `POST /v1/instagram/resolve` (alias: `POST /v1/ig/resolve`)
@@ -51,7 +56,7 @@
 ## Out of Scope (MVP)
 
 - Playlist downloads
-- Login/private/DRM content
+- Private/DRM content
 - Captcha
 - Actionable admin actions (retry/delete)
 - Terms/DMCA/Takedown pages

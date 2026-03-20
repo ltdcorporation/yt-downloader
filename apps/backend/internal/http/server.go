@@ -21,6 +21,7 @@ import (
 	"github.com/hibiken/asynq"
 	"golang.org/x/time/rate"
 
+	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
@@ -60,16 +61,18 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg        config.Config
-	logger     *log.Logger
-	resolver   youtubeResolver
-	xResolver  xMediaResolver
-	igResolver igMediaResolver
-	ttResolver ttMediaResolver
-	queue      taskQueue
-	jobStore   jobStore
-	origins    map[string]struct{}
-	limiter    *ipRateLimiter
+	cfg         config.Config
+	logger      *log.Logger
+	resolver    youtubeResolver
+	xResolver   xMediaResolver
+	igResolver  igMediaResolver
+	ttResolver  ttMediaResolver
+	queue       taskQueue
+	jobStore    jobStore
+	authStore   *auth.Store
+	authService *auth.Service
+	origins     map[string]struct{}
+	limiter     *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
@@ -141,17 +144,26 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		burst = 1
 	}
 
+	authStore := auth.NewStore(cfg, logger)
+	authService := auth.NewService(authStore, auth.Options{
+		SessionTTL:         time.Duration(cfg.AuthSessionTTLHours) * time.Hour,
+		RememberSessionTTL: time.Duration(cfg.AuthRememberSessionTTLHours) * time.Hour,
+		BcryptCost:         cfg.AuthBcryptCost,
+	})
+
 	return &Server{
-		cfg:        cfg,
-		logger:     logger,
-		resolver:   resolver,
-		xResolver:  xResolver,
-		igResolver: igResolver,
-		ttResolver: ttResolver,
-		queue:      queue,
-		jobStore:   store,
-		origins:    parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:    newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:         cfg,
+		logger:      logger,
+		resolver:    resolver,
+		xResolver:   xResolver,
+		igResolver:  igResolver,
+		ttResolver:  ttResolver,
+		queue:       queue,
+		jobStore:    store,
+		authStore:   authStore,
+		authService: authService,
+		origins:     parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:     newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 }
 
@@ -166,6 +178,11 @@ func (s *Server) Close() {
 			s.logger.Printf("warning: close job store: %v", err)
 		}
 	}
+	if s.authStore != nil {
+		if err := s.authStore.Close(); err != nil {
+			s.logger.Printf("warning: close auth store: %v", err)
+		}
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -177,6 +194,10 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	r.Get("/healthz", s.handleHealthz)
+	r.Post("/v1/auth/register", s.handleAuthRegister)
+	r.Post("/v1/auth/login", s.handleAuthLogin)
+	r.Get("/v1/auth/me", s.handleAuthMe)
+	r.Post("/v1/auth/logout", s.handleAuthLogout)
 	r.Post("/v1/youtube/resolve", s.handleResolveYouTube)
 	r.Post("/v1/x/resolve", s.handleResolveX)
 	r.Post("/v1/instagram/resolve", s.handleResolveInstagram)
@@ -549,7 +570,7 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 				ext = "jpg"
 				contentType = "image/jpeg"
 			}
-			
+
 			filename := "file." + ext
 			if strings.TrimSpace(title) != "" {
 				// Simple cleanup of title for filename
@@ -667,7 +688,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Add("Vary", "Origin")
 			if s.originAllowed(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			}
 		}

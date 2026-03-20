@@ -10,34 +10,89 @@ import {
   ArrowRight,
   GoogleLogo,
 } from "@phosphor-icons/react";
+import { api, APIError } from "@/lib/api";
+import { persistAuthSession } from "@/lib/auth-session";
+
+function resolveLoginErrorMessage(error: APIError): string {
+  switch (error.code) {
+    case "invalid_credentials":
+      return "Email atau password salah.";
+    default:
+      return error.message || "Login gagal. Coba lagi.";
+  }
+}
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSwitchToSignup?: () => void;
 }
 
-export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+export default function LoginModal({
+  isOpen,
+  onClose,
+  onSwitchToSignup,
+}: LoginModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [keepLoggedIn, setKeepLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   if (!isOpen) {
     return null;
   }
 
+  const resetForm = () => {
+    setEmail("");
+    setPassword("");
+    setShowPassword(false);
+    setKeepLoggedIn(false);
+    setIsLoading(false);
+    setErrorMessage("");
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isLoading) {
+      return;
+    }
+
+    setErrorMessage("");
     setIsLoading(true);
-    // TODO: Implement actual login logic
-    console.log("Login attempt:", { email, password, keepLoggedIn });
-    setIsLoading(false);
+
+    try {
+      const auth = await api.login({
+        email,
+        password,
+        keepLoggedIn,
+      });
+      persistAuthSession(auth, keepLoggedIn);
+      window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
+      handleClose();
+    } catch (error) {
+      if (error instanceof APIError) {
+        setErrorMessage(resolveLoginErrorMessage(error));
+      } else {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Login gagal. Coba lagi.",
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -50,7 +105,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
       <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-[440px] p-10 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.08)] flex flex-col items-center relative animate-slide-up mx-4">
         {/* Close Button */}
         <button
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
           aria-label="Close modal"
         >
@@ -170,6 +225,13 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
             </label>
           </div>
 
+          {/* Error Message */}
+          {errorMessage ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+              {errorMessage}
+            </div>
+          ) : null}
+
           {/* Login Button */}
           <button
             className="w-full mt-2 py-3.5 bg-primary text-white font-semibold rounded-lg hover:brightness-110 transition-colors flex justify-center items-center gap-2 shadow-[0_4px_14px_0_rgba(128,126,152,0.39)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -190,12 +252,19 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
         {/* Sign Up Link */}
         <div className="mt-6 text-sm text-slate-500 dark:text-slate-400 text-center">
           Don&apos;t have an account?{" "}
-          <a
+          <button
             className="font-semibold hover:text-primary transition-colors"
-            href="#"
+            type="button"
+            onClick={() => {
+              if (!onSwitchToSignup) {
+                return;
+              }
+              resetForm();
+              onSwitchToSignup();
+            }}
           >
             Sign Up
-          </a>
+          </button>
         </div>
 
         {/* Divider */}

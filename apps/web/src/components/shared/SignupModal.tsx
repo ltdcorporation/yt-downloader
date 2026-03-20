@@ -1,34 +1,96 @@
 "use client";
 
 import { useState } from "react";
-import { X, User, EnvelopeSimple, Lock, ArrowRight, GoogleLogo } from "@phosphor-icons/react";
+import {
+  X,
+  User,
+  EnvelopeSimple,
+  Lock,
+  ArrowRight,
+  GoogleLogo,
+} from "@phosphor-icons/react";
+import { api, APIError } from "@/lib/api";
+import { persistAuthSession } from "@/lib/auth-session";
+
+function resolveSignupErrorMessage(error: APIError): string {
+  switch (error.code) {
+    case "email_taken":
+      return "Email ini sudah terdaftar.";
+    default:
+      return error.message || "Sign up gagal. Coba lagi.";
+  }
+}
 
 interface SignupModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSwitchToLogin?: () => void;
 }
 
-export default function SignupModal({ isOpen, onClose }: SignupModalProps) {
+export default function SignupModal({
+  isOpen,
+  onClose,
+  onSwitchToLogin,
+}: SignupModalProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   if (!isOpen) {
     return null;
   }
 
+  const resetForm = () => {
+    setFullName("");
+    setEmail("");
+    setPassword("");
+    setIsLoading(false);
+    setErrorMessage("");
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isLoading) {
+      return;
+    }
+
+    setErrorMessage("");
     setIsLoading(true);
-    // TODO: Implement actual signup logic
-    console.log("Signup attempt:", { fullName, email, password });
-    setIsLoading(false);
+
+    try {
+      const auth = await api.register({
+        fullName,
+        email,
+        password,
+        keepLoggedIn: true,
+      });
+      persistAuthSession(auth, true);
+      window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
+      handleClose();
+    } catch (error) {
+      if (error instanceof APIError) {
+        setErrorMessage(resolveSignupErrorMessage(error));
+      } else {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Sign up gagal. Coba lagi.",
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -57,7 +119,7 @@ export default function SignupModal({ isOpen, onClose }: SignupModalProps) {
             </span>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
             aria-label="Close modal"
           >
@@ -76,7 +138,7 @@ export default function SignupModal({ isOpen, onClose }: SignupModalProps) {
         </div>
 
         {/* Form */}
-        <div className="px-8 pb-8 space-y-5">
+        <form className="px-8 pb-8 space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-4">
             {/* Full Name Field */}
             <div className="flex flex-col gap-1.5">
@@ -157,11 +219,17 @@ export default function SignupModal({ isOpen, onClose }: SignupModalProps) {
             </div>
           </div>
 
+          {/* Error Message */}
+          {errorMessage ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+              {errorMessage}
+            </div>
+          ) : null}
+
           {/* Sign Up Button */}
           <button
             className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-lg transition-colors shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
             type="submit"
-            onClick={handleSubmit}
             disabled={isLoading || !fullName || !email || !password}
           >
             {isLoading ? (
@@ -197,14 +265,21 @@ export default function SignupModal({ isOpen, onClose }: SignupModalProps) {
           {/* Login Link */}
           <p className="text-center text-slate-500 dark:text-slate-400 text-sm">
             Already have an account?{" "}
-            <a
+            <button
               className="text-primary font-semibold hover:underline decoration-primary/30"
-              href="#"
+              type="button"
+              onClick={() => {
+                if (!onSwitchToLogin) {
+                  return;
+                }
+                resetForm();
+                onSwitchToLogin();
+              }}
             >
               Login
-            </a>
+            </button>
           </p>
-        </div>
+        </form>
       </div>
     </div>
   );

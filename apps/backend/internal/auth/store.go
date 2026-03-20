@@ -1,0 +1,136 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"log"
+	"strings"
+	"time"
+
+	"yt-downloader/backend/internal/config"
+)
+
+var (
+	ErrEmailTaken          = errors.New("email already registered")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrSessionNotFound     = errors.New("session not found")
+	ErrSessionRevoked      = errors.New("session revoked")
+	ErrSessionExpired      = errors.New("session expired")
+	ErrInvalidCredentials  = errors.New("invalid email or password")
+	ErrInvalidSessionToken = errors.New("invalid session token")
+)
+
+type User struct {
+	ID           string
+	FullName     string
+	Email        string
+	PasswordHash string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type Session struct {
+	ID           string
+	UserID       string
+	TokenHash    string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
+	RevokedAt    *time.Time
+	LastSeenAt   *time.Time
+	ClientIP     string
+	UserAgent    string
+	KeepLoggedIn bool
+}
+
+type backend interface {
+	CreateUser(ctx context.Context, user User) error
+	CreateUserAndSession(ctx context.Context, user User, session Session) error
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, userID string) (User, error)
+	CreateSession(ctx context.Context, session Session) error
+	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
+	TouchSession(ctx context.Context, tokenHash string, touchedAt time.Time) error
+	RevokeSessionByTokenHash(ctx context.Context, tokenHash string, revokedAt time.Time) error
+	Close() error
+}
+
+type Store struct {
+	backend backend
+}
+
+func NewStore(cfg config.Config, logger *log.Logger) *Store {
+	if strings.TrimSpace(cfg.PostgresDSN) != "" {
+		if logger != nil {
+			logger.Printf("auth store engine=postgres")
+		}
+		return &Store{backend: newPostgresBackend(cfg.PostgresDSN)}
+	}
+
+	if logger != nil {
+		logger.Printf("auth store engine=memory (POSTGRES_DSN empty)")
+	}
+	return &Store{backend: newMemoryBackend()}
+}
+
+func (s *Store) Close() error {
+	if s == nil || s.backend == nil {
+		return nil
+	}
+	return s.backend.Close()
+}
+
+func (s *Store) CreateUser(ctx context.Context, user User) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	return s.backend.CreateUser(ctx, user)
+}
+
+func (s *Store) CreateUserAndSession(ctx context.Context, user User, session Session) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	return s.backend.CreateUserAndSession(ctx, user, session)
+}
+
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+	return s.backend.GetUserByEmail(ctx, strings.TrimSpace(strings.ToLower(email)))
+}
+
+func (s *Store) GetUserByID(ctx context.Context, userID string) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+	return s.backend.GetUserByID(ctx, strings.TrimSpace(userID))
+}
+
+func (s *Store) CreateSession(ctx context.Context, session Session) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	return s.backend.CreateSession(ctx, session)
+}
+
+func (s *Store) GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error) {
+	if s == nil || s.backend == nil {
+		return Session{}, errors.New("auth store is not initialized")
+	}
+	return s.backend.GetSessionByTokenHash(ctx, strings.TrimSpace(strings.ToLower(tokenHash)))
+}
+
+func (s *Store) TouchSession(ctx context.Context, tokenHash string, touchedAt time.Time) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	return s.backend.TouchSession(ctx, strings.TrimSpace(strings.ToLower(tokenHash)), touchedAt)
+}
+
+func (s *Store) RevokeSessionByTokenHash(ctx context.Context, tokenHash string, revokedAt time.Time) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	return s.backend.RevokeSessionByTokenHash(ctx, strings.TrimSpace(strings.ToLower(tokenHash)), revokedAt)
+}

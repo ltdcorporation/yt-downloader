@@ -32,6 +32,12 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("POSTGRES_DSN", "")
 	t.Setenv("ADMIN_BASIC_AUTH_USER", "")
 	t.Setenv("ADMIN_BASIC_AUTH_PASS", "")
+	t.Setenv("AUTH_SESSION_COOKIE_NAME", "")
+	t.Setenv("AUTH_SESSION_COOKIE_DOMAIN", "")
+	t.Setenv("AUTH_SESSION_COOKIE_SECURE", "")
+	t.Setenv("AUTH_SESSION_TTL_HOURS", "")
+	t.Setenv("AUTH_REMEMBER_SESSION_TTL_HOURS", "")
+	t.Setenv("AUTH_BCRYPT_COST", "")
 	t.Setenv("R2_ENDPOINT", "")
 	t.Setenv("R2_REGION", "")
 	t.Setenv("R2_BUCKET", "")
@@ -78,6 +84,21 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.AdminBasicAuthUser != "admin" || cfg.AdminBasicAuthPass != "change-me" {
 		t.Fatalf("unexpected default admin credentials")
 	}
+	if cfg.AuthSessionCookieName != "qs_session" {
+		t.Fatalf("unexpected default AUTH_SESSION_COOKIE_NAME: %s", cfg.AuthSessionCookieName)
+	}
+	if cfg.AuthSessionCookieDomain != "" {
+		t.Fatalf("unexpected default AUTH_SESSION_COOKIE_DOMAIN: %s", cfg.AuthSessionCookieDomain)
+	}
+	if cfg.AuthSessionCookieSecure {
+		t.Fatalf("expected AUTH_SESSION_COOKIE_SECURE=false in non-production defaults")
+	}
+	if cfg.AuthSessionTTLHours != 24 || cfg.AuthRememberSessionTTLHours != 720 {
+		t.Fatalf("unexpected auth TTL defaults: ttl=%d remember=%d", cfg.AuthSessionTTLHours, cfg.AuthRememberSessionTTLHours)
+	}
+	if cfg.AuthBcryptCost != 12 {
+		t.Fatalf("unexpected AUTH_BCRYPT_COST default: %d", cfg.AuthBcryptCost)
+	}
 	if cfg.CORSAllowedOrigins != "http://127.0.0.1:3000,http://localhost:3000" {
 		t.Fatalf("unexpected default CORS origins: %s", cfg.CORSAllowedOrigins)
 	}
@@ -109,6 +130,12 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("JOB_RETENTION_DAYS", "30")
 	t.Setenv("REDIS_ADDR", "127.0.0.1:6382")
 	t.Setenv("POSTGRES_DSN", "postgres://postgres:pass@127.0.0.1:5435/ytd?sslmode=disable")
+	t.Setenv("AUTH_SESSION_COOKIE_NAME", "quicksnap_session")
+	t.Setenv("AUTH_SESSION_COOKIE_DOMAIN", ".example.com")
+	t.Setenv("AUTH_SESSION_COOKIE_SECURE", "not-bool")
+	t.Setenv("AUTH_SESSION_TTL_HOURS", "12")
+	t.Setenv("AUTH_REMEMBER_SESSION_TTL_HOURS", "480")
+	t.Setenv("AUTH_BCRYPT_COST", "14")
 	t.Setenv("R2_KEY_PREFIX", "yt-downloader/prod")
 
 	cfg := Load()
@@ -178,6 +205,21 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.PostgresDSN == "" {
 		t.Fatalf("expected POSTGRES_DSN override")
+	}
+	if cfg.AuthSessionCookieName != "quicksnap_session" {
+		t.Fatalf("unexpected AUTH_SESSION_COOKIE_NAME override: %s", cfg.AuthSessionCookieName)
+	}
+	if cfg.AuthSessionCookieDomain != ".example.com" {
+		t.Fatalf("unexpected AUTH_SESSION_COOKIE_DOMAIN override: %s", cfg.AuthSessionCookieDomain)
+	}
+	if !cfg.AuthSessionCookieSecure {
+		t.Fatalf("invalid AUTH_SESSION_COOKIE_SECURE should fallback to true for production")
+	}
+	if cfg.AuthSessionTTLHours != 12 || cfg.AuthRememberSessionTTLHours != 480 {
+		t.Fatalf("unexpected auth ttl overrides: ttl=%d remember=%d", cfg.AuthSessionTTLHours, cfg.AuthRememberSessionTTLHours)
+	}
+	if cfg.AuthBcryptCost != 14 {
+		t.Fatalf("unexpected AUTH_BCRYPT_COST override: %d", cfg.AuthBcryptCost)
 	}
 	if cfg.R2KeyPrefix != "yt-downloader/prod" {
 		t.Fatalf("unexpected R2_KEY_PREFIX override: %s", cfg.R2KeyPrefix)
