@@ -161,6 +161,8 @@ export default function InputBar() {
 
     const link = document.createElement("a");
     link.href = downloadUrl;
+    link.setAttribute("download", "");
+    link.target = "_blank"; // Safety fallback
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

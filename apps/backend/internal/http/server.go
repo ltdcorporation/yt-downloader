@@ -501,6 +501,13 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 				Type string
 			}{ID: f.ID, URL: f.URL, Type: f.Type})
 		}
+		for _, m := range res.Medias {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: m.ID, URL: m.URL, Type: m.Type})
+		}
 	case "instagram":
 		res, err := s.igResolver.Resolve(r.Context(), sourceURL)
 		if err != nil {
@@ -515,15 +522,20 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 				Type string
 			}{ID: f.ID, URL: f.URL, Type: f.Type})
 		}
+		// Also look into Medias (for carousel or single images)
+		for _, m := range res.Medias {
+			formats = append(formats, struct {
+				ID   string
+				URL  string
+				Type string
+			}{ID: m.ID, URL: m.URL, Type: m.Type})
+		}
 	default:
 		writeError(w, http.StatusBadRequest, "unsupported platform")
 		return
 	}
 
 	for _, format := range formats {
-		if format.Type != "mp4" {
-			continue
-		}
 		if format.ID == formatID {
 			if format.URL == "" {
 				writeError(w, http.StatusBadRequest, "selected format is unavailable")
@@ -531,7 +543,14 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Force download by setting Content-Disposition
-			filename := "video.mp4"
+			ext := "mp4"
+			contentType := "video/mp4"
+			if format.Type == "image" {
+				ext = "jpg"
+				contentType = "image/jpeg"
+			}
+			
+			filename := "file." + ext
 			if strings.TrimSpace(title) != "" {
 				// Simple cleanup of title for filename
 				cleanTitle := strings.Map(func(r rune) rune {
@@ -541,12 +560,38 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 					return '_'
 				}, title)
 				if cleanTitle != "" {
-					filename = cleanTitle + ".mp4"
+					filename = cleanTitle + "." + ext
 				}
 			}
 			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+			w.Header().Set("Content-Type", contentType)
 
-			http.Redirect(w, r, format.URL, http.StatusFound)
+			// Proxy the stream
+			req, err := http.NewRequestWithContext(r.Context(), "GET", format.URL, nil)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to create upstream request")
+				return
+			}
+
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, "failed to fetch content from source")
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				writeError(w, http.StatusBadGateway, fmt.Sprintf("source returned status %d", resp.StatusCode))
+				return
+			}
+
+			if resp.ContentLength > 0 {
+				w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+			}
+
+			_, _ = io.Copy(w, resp.Body)
 			return
 		}
 	}

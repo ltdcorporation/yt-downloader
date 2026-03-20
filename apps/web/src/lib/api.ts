@@ -20,6 +20,14 @@ export interface ResolveResponse {
   thumbnail: string;
   duration_seconds: number;
   formats: ResolveFormat[];
+  medias?: {
+    id: string;
+    type: "video" | "image";
+    url: string;
+    thumbnail?: string;
+    quality?: string;
+  }[];
+  kind?: "video" | "image" | "carousel";
   author?: string;
   views?: string;
   likes?: string;

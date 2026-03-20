@@ -64,17 +64,40 @@ type ResolveResult struct {
 	Thumbnail       string   `json:"thumbnail"`
 	DurationSeconds int      `json:"duration_seconds,omitempty"`
 	Formats         []Format `json:"formats"`
+	Medias          []Media  `json:"medias,omitempty"`
 	CookieProfile   string   `json:"cookie_profile,omitempty"`
+	Kind            string   `json:"kind"` // "video", "image", "carousel"
+}
+
+type Media struct {
+	ID        string `json:"id"`
+	Type      string `json:"type"` // "video", "image"
+	URL       string `json:"url"`
+	Thumbnail string `json:"thumbnail,omitempty"`
+	Quality   string `json:"quality,omitempty"`
 }
 
 type ytdlpOutput struct {
+	Title       string        `json:"title"`
+	Thumbnail   string        `json:"thumbnail"`
+	Thumbnails  []thumbnail   `json:"thumbnails"`
+	Duration    float64       `json:"duration"`
+	IsLive      bool          `json:"is_live"`
+	LiveStatus  string        `json:"live_status"`
+	Formats     []ytdlpFormat `json:"formats"`
+	Entries     []ytdlpEntry  `json:"entries"` // For carousels
+	RequestedAt string        `json:"_type"`   // To check if it's a playlist/carousel
+}
+
+type ytdlpEntry struct {
+	ID         string        `json:"id"`
 	Title      string        `json:"title"`
 	Thumbnail  string        `json:"thumbnail"`
-	Thumbnails []thumbnail   `json:"thumbnails"`
-	Duration   float64       `json:"duration"`
-	IsLive     bool          `json:"is_live"`
-	LiveStatus string        `json:"live_status"`
+	URL        string        `json:"url"`
 	Formats    []ytdlpFormat `json:"formats"`
+	Ext        string        `json:"ext"`
+	Duration   float64       `json:"duration"`
+	Thumbnails []thumbnail   `json:"thumbnails"`
 }
 
 type thumbnail struct {
@@ -214,33 +237,101 @@ func (r *Resolver) resolveWithCandidate(ctx context.Context, targetURL string, h
 		return ResolveResult{}, errors.New("live content is not supported")
 	}
 
-	formats := r.selectFormats(payload.Formats)
-	if len(formats) == 0 {
-		if isLikelyHLSOnlySource(payload.Formats) {
-			return ResolveResult{}, &ResolveError{
-				Code:    ErrCodeIGHLSOnlyNotSupported,
-				Message: "Instagram video is HLS-only and not supported yet",
+	result := ResolveResult{
+		Title:     payload.Title,
+		Thumbnail: chooseThumbnail(payload),
+		Kind:      "video",
+	}
+
+	// Case 1: Carousel / Multiple items (Playlist in yt-dlp terms)
+	if len(payload.Entries) > 0 {
+		result.Kind = "carousel"
+		for i, entry := range payload.Entries {
+			media := Media{
+				ID:        entry.ID,
+				Thumbnail: entry.Thumbnail,
+				URL:       entry.URL, // Default to its URL if direct link
+				Type:      "video",
+			}
+			if entry.Ext == "jpg" || entry.Ext == "png" {
+				media.Type = "image"
+			}
+			// Find best format for this entry if it's a video
+			if media.Type == "video" && len(entry.Formats) > 0 {
+				bestFormat := r.selectBestFormat(entry.Formats)
+				if bestFormat.URL != "" {
+					media.URL = bestFormat.URL
+					media.Quality = bestFormat.Quality
+				}
+			}
+			if media.ID == "" {
+				media.ID = fmt.Sprintf("media_%d", i)
+			}
+			result.Medias = append(result.Medias, media)
+		}
+	} else {
+		// Case 2: Single item
+		// Check if it's an image
+		isImage := false
+		for _, f := range payload.Formats {
+			if f.VideoCodec == "none" && (f.Ext == "jpg" || f.Ext == "png" || f.Protocol == "http" || f.Protocol == "https") && !strings.Contains(f.FormatID, "audio") {
+				// Some formats in IG are direct image links
+				if f.Height > 0 && f.URL != "" {
+					isImage = true
+					break
+				}
 			}
 		}
-		return ResolveResult{}, errors.New("no downloadable MP4 format is available")
+
+		if isImage {
+			result.Kind = "image"
+			// Extract best image format as a virtual "format" or media
+			for _, f := range payload.Formats {
+				if f.VideoCodec == "none" && (f.Ext == "jpg" || f.Ext == "png") {
+					result.Medias = append(result.Medias, Media{
+						ID:   f.FormatID,
+						Type: "image",
+						URL:  f.URL,
+					})
+				}
+			}
+		} else {
+			// It's a video (Reel / IGTV)
+			formats := r.selectFormats(payload.Formats)
+			if len(formats) == 0 {
+				if isLikelyHLSOnlySource(payload.Formats) {
+					return ResolveResult{}, &ResolveError{
+						Code:    ErrCodeIGHLSOnlyNotSupported,
+						Message: "Instagram video is HLS-only and not supported yet",
+					}
+				}
+				return ResolveResult{}, errors.New("no downloadable MP4 format is available")
+			}
+			result.Formats = formats
+			result.Kind = "video"
+		}
 	}
 
 	durationSeconds := int(math.Round(payload.Duration))
 	if durationSeconds < 0 {
 		durationSeconds = 0
 	}
+	result.DurationSeconds = durationSeconds
 
-	result := ResolveResult{
-		Title:           payload.Title,
-		Thumbnail:       chooseThumbnail(payload),
-		DurationSeconds: durationSeconds,
-		Formats:         formats,
-	}
 	if candidate.profile != "" {
 		result.CookieProfile = candidate.profile
 	}
 
 	return result, nil
+}
+
+func (r *Resolver) selectBestFormat(raw []ytdlpFormat) Format {
+	formats := r.selectFormats(raw)
+	if len(formats) == 0 {
+		return Format{}
+	}
+	// Already sorted by height ascending, return the best one
+	return formats[len(formats)-1]
 }
 
 func validateInstagramURL(rawURL string) error {
@@ -439,7 +530,11 @@ func isLikelyInstagramDirectMP4(item ytdlpFormat) bool {
 	if item.URL == "" {
 		return false
 	}
-	if strings.TrimSpace(item.VideoCodec) != "" || strings.TrimSpace(item.AudioCodec) != "" {
+	
+	vcodec := strings.ToLower(strings.TrimSpace(item.VideoCodec))
+	acodec := strings.ToLower(strings.TrimSpace(item.AudioCodec))
+	
+	if (vcodec != "" && vcodec != "none") || (acodec != "" && acodec != "none") {
 		return false
 	}
 

@@ -11,6 +11,8 @@ import {
   XLogo,
   WarningCircle,
   MusicNotes,
+  Image as ImageIcon,
+  CheckCircle,
 } from "@phosphor-icons/react";
 import { type ResolveFormat, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
@@ -76,9 +78,14 @@ export default function DownloadModal({
   onRetryResolve,
 }: DownloadModalProps) {
   const [selectedFormatId, setSelectedFormatId] = useState("");
+  const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [isConfirming, setIsConfirming] = useState(false);
 
   const platform = detectPlatform(sourceUrl);
+  const isInstagram = platform === "instagram";
+  const isCarousel = isInstagram && result?.kind === "carousel";
+  const isImageOnly = isInstagram && result?.kind === "image";
+
   let PlatformIcon = YoutubeLogo;
   let platformLabel = "YouTube";
   let platformColor = "bg-red-100 text-red-600";
@@ -111,6 +118,7 @@ export default function DownloadModal({
       (format) => format.type === "mp4",
     );
 
+    // Sort: SD (usually lower height) first, then HD
     return [...formats].sort(
       (a, b) =>
         parseQualityToHeight(a.quality) - parseQualityToHeight(b.quality),
@@ -122,6 +130,21 @@ export default function DownloadModal({
     [mp4Formats, selectedFormatId],
   );
 
+  const toggleMediaSelection = (id: string) => {
+    setSelectedMediaIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
+    );
+  };
+
+  const selectAllMedias = () => {
+    if (!result?.medias) return;
+    if (selectedMediaIds.length === result.medias.length) {
+      setSelectedMediaIds([]);
+    } else {
+      setSelectedMediaIds(result.medias.map((m) => m.id));
+    }
+  };
+
   const instagramHasVideoOnly = useMemo(() => {
     if (platform !== "instagram") return false;
     return mp4Formats.some((format) =>
@@ -132,15 +155,20 @@ export default function DownloadModal({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
+      // Auto-select all if carousel
+      if (result?.medias && result.kind === "carousel") {
+        setSelectedMediaIds(result.medias.map((m) => m.id));
+      }
     } else {
       document.body.style.overflow = "";
       setIsConfirming(false);
+      setSelectedMediaIds([]);
     }
 
     return () => {
       document.body.style.overflow = "";
     };
-  }, [isOpen]);
+  }, [isOpen, result]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -168,6 +196,15 @@ export default function DownloadModal({
   }
 
   const handleDownloadTrigger = () => {
+    if (isCarousel) {
+      if (selectedMediaIds.length === 0) return;
+      setIsConfirming(true);
+      return;
+    }
+    if (isImageOnly) {
+      setIsConfirming(true);
+      return;
+    }
     if (!sourceUrl || !selectedFormat) {
       return;
     }
@@ -175,6 +212,22 @@ export default function DownloadModal({
   };
 
   const handleFinalDownload = () => {
+    if (isCarousel) {
+      selectedMediaIds.forEach((id, index) => {
+        setTimeout(() => {
+          onConfirmDownload(id);
+        }, index * 800);
+      });
+      setIsConfirming(false);
+      return;
+    }
+
+    if (isImageOnly && result?.medias && result.medias.length > 0) {
+      onConfirmDownload(result.medias[0].id);
+      setIsConfirming(false);
+      return;
+    }
+
     if (!sourceUrl || !selectedFormat) {
       return;
     }
@@ -184,6 +237,18 @@ export default function DownloadModal({
   };
 
   const hasFormats = mp4Formats.length > 0;
+
+  const downloadButtonLabel = (() => {
+    if (isCarousel) {
+      return `Download ${selectedMediaIds.length} Selected Media`;
+    }
+    if (isImageOnly) {
+      return "Download Image";
+    }
+    return selectedFormat
+      ? `Download MP4 (${selectedFormat.quality})`
+      : "Download MP4";
+  })();
 
   const modalContent = (
     <div
@@ -209,8 +274,11 @@ export default function DownloadModal({
                 Ready to Download?
               </h3>
               <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 leading-relaxed">
-                You are about to download <strong>{result?.title}</strong> in{" "}
-                <strong>{selectedFormat?.quality}</strong>.
+                {isCarousel
+                  ? `You are about to download ${selectedMediaIds.length} media items from this post.`
+                  : isImageOnly
+                    ? `You are about to download the photo from this post.`
+                    : `You are about to download ${result?.title} in ${selectedFormat?.quality}.`}
               </p>
               <div className="flex flex-col gap-3">
                 <button
@@ -226,17 +294,11 @@ export default function DownloadModal({
                   Cancel
                 </button>
               </div>
-              <p className="mt-4 text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-                Mock Confirmation v1
-              </p>
             </div>
           </div>
         )}
         <div className="px-6 md:px-8 pt-6 pb-4 flex justify-between items-center border-b border-slate-100 dark:border-slate-800">
-          <h2
-            id="modal-title"
-            className="text-xl md:text-2xl font-bold text-primary"
-          >
+          <h2 id="modal-title" className="text-xl md:text-2xl font-bold text-primary">
             Download Options
           </h2>
           <button
@@ -259,207 +321,208 @@ export default function DownloadModal({
                   src={result.thumbnail}
                 />
               ) : null}
-              <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
-                {formatDuration(result?.duration_seconds)}
-              </div>
+              {!isImageOnly && !isCarousel && (
+                <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[11px] px-1.5 py-0.5 rounded">
+                  {formatDuration(result?.duration_seconds)}
+                </div>
+              )}
             </div>
 
             <div className="min-w-0 flex-1 flex flex-col justify-center">
               <div className="flex items-center gap-2 mb-2">
-                <span
-                  className={`${platformColor} text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1`}
-                >
+                <span className={`${platformColor} text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1`}>
                   <PlatformIcon size={12} weight="fill" />
                   {platformLabel}
                 </span>
-                {isLoading ? (
-                  <span className="text-slate-400 text-xs">
-                    Resolving formats...
-                  </span>
-                ) : null}
+                {isLoading && <span className="text-slate-400 text-xs">Resolving...</span>}
               </div>
-
               <h3 className="font-semibold text-slate-900 dark:text-slate-100 leading-tight line-clamp-2">
                 {result?.title || "No metadata available"}
               </h3>
-
-              {sourceUrl ? (
-                <p
-                  className="text-xs text-slate-500 mt-2 truncate"
-                  title={sourceUrl}
-                >
+              {sourceUrl && (
+                <p className="text-xs text-slate-500 mt-2 truncate" title={sourceUrl}>
                   {sourceUrl}
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
 
           <div>
             <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
-              Direct MP4 Download
+              {isCarousel
+                ? "Instagram Carousel (Pilih Media)"
+                : isImageOnly
+                  ? "Instagram Photo"
+                  : "Direct MP4 Download"}
             </h4>
 
-            {platform === "instagram" ? (
+            {isInstagram && !isCarousel && !isImageOnly && (
               <div className="mb-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
-                <p className="font-bold">Pilih kualitas Instagram</p>
+                <p className="font-bold">Instagram Reels: Pilih Kualitas</p>
                 <p className="mt-1 text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Pilih resolusi lalu klik Download. Beberapa format bisa video-only
-                  (tanpa audio), tergantung sumber.
+                  Pilih antara SD (kualitas standar) atau HD (kualitas tinggi) jika tersedia.
                 </p>
               </div>
-            ) : null}
+            )}
 
-            {hasFormats ? (
+            {isCarousel && result?.medias && (
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-slate-500">
+                    {selectedMediaIds.length} dari {result.medias.length} media dipilih
+                  </p>
+                  <button onClick={selectAllMedias} className="text-xs font-bold text-primary hover:underline">
+                    {selectedMediaIds.length === result.medias.length ? "Unselect All" : "Select All"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {result.medias.map((media) => {
+                    const isSelected = selectedMediaIds.includes(media.id);
+                    return (
+                      <button
+                        key={media.id}
+                        onClick={() => toggleMediaSelection(media.id)}
+                        className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${
+                          isSelected ? "border-primary shadow-lg" : "border-slate-200 dark:border-slate-800 opacity-60"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={media.thumbnail || media.url} alt="Instagram media" className="w-full h-full object-cover" />
+                        <div className="absolute top-2 right-2">
+                          {isSelected ? (
+                            <CheckCircle size={20} weight="fill" className="text-primary bg-white rounded-full" />
+                          ) : (
+                            <div className="w-5 h-5 border-2 border-white rounded-full bg-black/20" />
+                          )}
+                        </div>
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase">
+                          {media.type}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {isImageOnly && result?.medias && (
+              <div className="grid grid-cols-1 gap-3">
+                {result.medias.map((media) => (
+                  <button
+                    key={media.id}
+                    onClick={() => onConfirmDownload(media.id)}
+                    className="w-full flex items-center gap-4 p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/60 transition-all group"
+                  >
+                    <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                      <ImageIcon size={24} weight="bold" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="font-bold text-slate-800 dark:text-slate-100">Download Image</p>
+                      <p className="text-xs text-slate-500">High resolution JPG format</p>
+                    </div>
+                    <Download size={20} className="text-slate-400 group-hover:text-primary transition-colors" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {!isCarousel && !isImageOnly && hasFormats ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {mp4Formats.map((format: ResolveFormat) => {
                   const isSelected = format.id === selectedFormatId;
                   const isInstagramVideoOnly =
-                    platform === "instagram" &&
-                    String(format.id).toLowerCase().startsWith("dash-");
+                    platform === "instagram" && String(format.id).toLowerCase().startsWith("dash-");
+                  let label = format.quality;
+                  if (isInstagram) {
+                    const h = parseQualityToHeight(format.quality);
+                    label = h >= 720 ? `HD (${format.quality})` : `SD (${format.quality})`;
+                  }
                   return (
                     <button
                       key={format.id}
                       onClick={() => setSelectedFormatId(format.id)}
                       className={`text-left p-4 border-2 rounded-xl transition-all ${
-                        isSelected
-                          ? "border-primary bg-primary/5"
-                          : "border-slate-200 dark:border-slate-700 hover:border-primary/60"
+                        isSelected ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700 hover:border-primary/60"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`font-bold text-lg ${
-                            isSelected
-                              ? "text-primary"
-                              : "text-slate-800 dark:text-slate-100"
-                          }`}
-                        >
-                          {format.quality}
+                        <span className={`font-bold text-lg ${isSelected ? "text-primary" : "text-slate-800 dark:text-slate-100"}`}>
+                          {label}
                         </span>
                         <div className="flex items-center gap-2">
-                          {isInstagramVideoOnly ? (
+                          {isInstagramVideoOnly && (
                             <span className="text-[10px] px-2 py-1 rounded bg-amber-100 text-amber-900 uppercase font-bold">
                               Video-only
                             </span>
-                          ) : null}
+                          )}
                           <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase">
                             {format.container}
                           </span>
                         </div>
                       </div>
-
-                      <p className="text-xs mt-2 text-slate-500 dark:text-slate-400">
-                        {formatFileSize(format.filesize)}
-                      </p>
+                      <p className="text-xs mt-2 text-slate-500 dark:text-slate-400">{formatFileSize(format.filesize)}</p>
                     </button>
                   );
                 })}
               </div>
-            ) : (
+            ) : null}
+
+            {!isCarousel && !isImageOnly && !hasFormats && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
                 <div className="flex items-start gap-2">
-                  <WarningCircle
-                    size={18}
-                    className="mt-0.5 flex-shrink-0 text-amber-700"
-                  />
+                  <WarningCircle size={18} className="mt-0.5 flex-shrink-0 text-amber-700" />
                   <div className="min-w-0 flex-1">
-                    <p className="font-bold">Tidak menemukan opsi MP4</p>
-                    <p className="mt-1">
-                      Coba gunakan video {platformLabel} publik lain, atau
-                      resolve ulang.
-                    </p>
+                    <p className="font-bold">Tidak menemukan opsi download</p>
+                    <p className="mt-1">Coba gunakan link lain atau resolve ulang.</p>
                   </div>
-                </div>
-
-                <div className="mt-4 flex flex-col sm:flex-row gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onRetryResolve?.();
-                    }}
-                    className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 font-bold text-white shadow-lg shadow-primary/20 hover:brightness-105 transition-all"
-                  >
-                    Resolve ulang
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="inline-flex items-center justify-center rounded-xl bg-white/70 px-4 py-2.5 font-bold text-amber-800 border border-amber-200 hover:bg-white transition-all"
-                  >
-                    Tutup
-                  </button>
-                </div>
-
-                <div className="mt-4 rounded-xl border border-amber-200/70 bg-white/60 px-4 py-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                    Troubleshooting
-                  </p>
-                  <ul className="mt-2 list-disc pl-5 text-amber-900/90 space-y-1">
-                    <li>Pastikan link video (bukan playlist).</li>
-                    <li>
-                      Video private/age-restricted bisa gagal ter-resolve.
-                    </li>
-                    <li>
-                      Kalau video terlalu panjang/berat, coba video yang lebih
-                      singkat.
-                    </li>
-                  </ul>
                 </div>
               </div>
             )}
 
-            {platform === "instagram" && instagramHasVideoOnly ? (
+            {isInstagram && instagramHasVideoOnly && (
               <p className="mt-3 text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
-                Catatan: label Video-only artinya file bisa tanpa audio. Ini perilaku
-                dari sumber Instagram (by design).
+                Catatan: label Video-only artinya file bisa tanpa audio. Ini perilaku dari sumber Instagram (by design).
               </p>
-            ) : null}
+            )}
           </div>
 
-          <div className="space-y-3">
-            <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Audio (MP3)
-            </h4>
-            <button
-              onClick={onConfirmMp3}
-              disabled={!sourceUrl || isLoading || platform !== "youtube"}
-              className="w-full flex items-center justify-between p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/60 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
-                  <MusicNotes size={20} weight="bold" />
+          {!isCarousel && !isImageOnly && (
+            <div className="space-y-3">
+              <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Audio (MP3)</h4>
+              <button
+                onClick={onConfirmMp3}
+                disabled={!sourceUrl || isLoading || platform !== "youtube"}
+                className="w-full flex items-center justify-between p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/60 transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                    <MusicNotes size={20} weight="bold" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-slate-800 dark:text-slate-100">MP3 Audio</p>
+                    <p className="text-xs text-slate-500">
+                      {platform === "youtube" ? "128kbps • Queue processing" : "Hanya tersedia untuk YouTube"}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className="font-bold text-slate-800 dark:text-slate-100">
-                    MP3 Audio
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {platform === "youtube"
-                      ? "128kbps • Queue processing"
-                      : "Hanya tersedia untuk YouTube"}
-                  </p>
-                </div>
-              </div>
-              <Download
-                size={20}
-                className="text-slate-400 group-hover:text-primary transition-colors"
-              />
-            </button>
-          </div>
+                <Download size={20} className="text-slate-400 group-hover:text-primary transition-colors" />
+              </button>
+            </div>
+          )}
 
           <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
             <button
               onClick={handleDownloadTrigger}
-              disabled={!selectedFormat || !sourceUrl}
+              disabled={
+                (isCarousel && selectedMediaIds.length === 0) ||
+                (!isCarousel && !isImageOnly && !selectedFormat) ||
+                !sourceUrl
+              }
               className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:brightness-105 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download size={24} weight="bold" />
-              {selectedFormat
-                ? `Download MP4 (${selectedFormat.quality})`
-                : "Download MP4"}
+              {downloadButtonLabel}
             </button>
-
             <p className="text-center text-[11px] text-slate-400 mt-4 leading-relaxed px-4 md:px-12">
               Downloads directly from source. No new tabs will be opened.
             </p>
