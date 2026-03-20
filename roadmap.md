@@ -15,11 +15,11 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [x] Frontend pakai internal proxy `/api/*` (lebih aman buat publik)
 - [x] `/history` masih mock data
 - [x] `/settings` masih mock data
-- [ ] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
-- [ ] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
-- [ ] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
+- [x] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
+- [x] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
+- [x] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
 - [ ] UX warning khusus untuk kasus X **HLS-only (by design belum didukung)** belum ada di FE
-- [ ] Home flow Instagram resolve belum ada di UI (backend sudah siap)
+- [x] Home flow Instagram resolve belum ada di UI (backend sudah siap)
 - [ ] UI **pilih kualitas download MP4 untuk Instagram** belum dikerjakan (status FE: belum implementasi)
 - [ ] UX warning khusus untuk kasus Instagram **HLS-only (by design belum didukung)** belum ada di FE
 - [ ] Home flow TikTok resolve belum ada di UI (backend sudah siap)
@@ -35,7 +35,7 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [x] Render metadata (title, thumbnail, duration)
 - [x] Render list format MP4
 - [x] Download MP4 via `GET /api/v1/download/mp4`
-- [ ] Tambah UX state yang lebih rapih (retry CTA, inline troubleshooting)
+- [x] Tambah UX state yang lebih rapih (retry CTA, inline troubleshooting)
 - [ ] Tambah fallback kalau `window.open` diblok browser (UX copy lebih jelas)
 
 ### C. Milestone FE-2 — MP3 UX di Home
@@ -71,8 +71,8 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 
 **Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow X masih **belum dikerjakan**.
 
-- [ ] Tambah source mode (YouTube / X) di UI home
-- [ ] Call `POST /api/v1/x/resolve` saat mode X aktif
+- [x] Tambah source mode (YouTube / X) di UI home
+- [x] Call `POST /api/v1/x/resolve` saat mode X aktif
 - [ ] Render metadata + format list dari response resolver X
 - [ ] Tambah UI picker kualitas MP4 khusus X (list/card per format + size jika tersedia)
 - [ ] Tambah CTA download MP4 per kualitas hasil resolver X
