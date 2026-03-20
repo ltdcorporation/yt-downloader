@@ -40,7 +40,20 @@ export interface JobStatusResponse {
   updated_at?: string;
 }
 
-export async function fetcher<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export class APIError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "APIError";
+    this.code = code;
+  }
+}
+
+export async function fetcher<T>(
+  endpoint: string,
+  options?: RequestInit,
+): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers: {
@@ -50,28 +63,26 @@ export async function fetcher<T>(endpoint: string, options?: RequestInit): Promi
   });
 
   if (!response.ok) {
-    const errorPayload = await response
-      .json()
-      .catch(() => ({ error: "An error occurred" }));
+    const errorPayload: { error?: string; message?: string; code?: string } =
+      await response.json().catch(() => ({ error: "An error occurred" }));
 
-    throw new Error(
-      errorPayload?.error || errorPayload?.message || `HTTP ${response.status}`,
-    );
+    const message =
+      errorPayload?.error || errorPayload?.message || `HTTP ${response.status}`;
+
+    throw new APIError(message, errorPayload?.code);
   }
 
   return response.json();
 }
 
 export const api = {
-  health: () => fetcher<{ ok: boolean; service: string; time: string }>("/healthz"),
+  health: () =>
+    fetcher<{ ok: boolean; service: string; time: string }>("/healthz"),
 
   resolve: (url: string) => {
     const platform = detectPlatform(url);
     if (platform === "unknown") {
       throw new Error("Unsupported or invalid social media URL.");
-    }
-    if (platform !== "youtube") {
-      throw new Error("Only YouTube URLs are supported right now.");
     }
     return fetcher<ResolveResponse>(`/v1/${platform}/resolve`, {
       method: "POST",
@@ -85,7 +96,8 @@ export const api = {
       body: JSON.stringify({ url }),
     }),
 
-  getJobStatus: (jobId: string) => fetcher<JobStatusResponse>(`/v1/jobs/${jobId}`),
+  getJobStatus: (jobId: string) =>
+    fetcher<JobStatusResponse>(`/v1/jobs/${jobId}`),
 
   getMp4DownloadUrl: (url: string, formatId: string) =>
     `${API_BASE_URL}/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`,

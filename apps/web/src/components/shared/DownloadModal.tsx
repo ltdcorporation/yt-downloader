@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Download, YoutubeLogo, TiktokLogo, InstagramLogo, XLogo, WarningCircle, MusicNotes } from "@phosphor-icons/react";
+import {
+  X,
+  Download,
+  YoutubeLogo,
+  TiktokLogo,
+  InstagramLogo,
+  XLogo,
+  WarningCircle,
+  MusicNotes,
+} from "@phosphor-icons/react";
 import { type ResolveFormat, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
@@ -66,36 +75,36 @@ export default function DownloadModal({
   onConfirmMp3,
   onRetryResolve,
 }: DownloadModalProps) {
-    const [selectedFormatId, setSelectedFormatId] = useState("");
-    const [isConfirming, setIsConfirming] = useState(false);
-  
-    const platform = detectPlatform(sourceUrl);
-    let PlatformIcon = YoutubeLogo;
-    let platformLabel = "YouTube";
-    let platformColor = "bg-red-100 text-red-600";
-  
-    switch (platform) {
-      case "youtube":
-        PlatformIcon = YoutubeLogo;
-        platformLabel = "YouTube";
-        platformColor = "bg-red-100 text-red-600";
-        break;
-      case "tiktok":
-        PlatformIcon = TiktokLogo;
-        platformLabel = "TikTok";
-        platformColor = "bg-slate-900 text-white";
-        break;
-      case "instagram":
-        PlatformIcon = InstagramLogo;
-        platformLabel = "Instagram";
-        platformColor = "bg-pink-100 text-pink-600";
-        break;
-      case "x":
-        PlatformIcon = XLogo;
-        platformLabel = "X / Twitter";
-        platformColor = "bg-slate-900 text-white";
-        break;
-    }
+  const [selectedFormatId, setSelectedFormatId] = useState("");
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  const platform = detectPlatform(sourceUrl);
+  let PlatformIcon = YoutubeLogo;
+  let platformLabel = "YouTube";
+  let platformColor = "bg-red-100 text-red-600";
+
+  switch (platform) {
+    case "youtube":
+      PlatformIcon = YoutubeLogo;
+      platformLabel = "YouTube";
+      platformColor = "bg-red-100 text-red-600";
+      break;
+    case "tiktok":
+      PlatformIcon = TiktokLogo;
+      platformLabel = "TikTok";
+      platformColor = "bg-slate-900 text-white";
+      break;
+    case "instagram":
+      PlatformIcon = InstagramLogo;
+      platformLabel = "Instagram";
+      platformColor = "bg-pink-100 text-pink-600";
+      break;
+    case "x":
+      PlatformIcon = XLogo;
+      platformLabel = "X / Twitter";
+      platformColor = "bg-slate-900 text-white";
+      break;
+  }
 
   const mp4Formats = useMemo(() => {
     const formats = (result?.formats || []).filter(
@@ -103,7 +112,8 @@ export default function DownloadModal({
     );
 
     return [...formats].sort(
-      (a, b) => parseQualityToHeight(a.quality) - parseQualityToHeight(b.quality),
+      (a, b) =>
+        parseQualityToHeight(a.quality) - parseQualityToHeight(b.quality),
     );
   }, [result]);
 
@@ -111,6 +121,13 @@ export default function DownloadModal({
     () => mp4Formats.find((format) => format.id === selectedFormatId) || null,
     [mp4Formats, selectedFormatId],
   );
+
+  const instagramHasVideoOnly = useMemo(() => {
+    if (platform !== "instagram") return false;
+    return mp4Formats.some((format) =>
+      String(format.id).toLowerCase().startsWith("dash-"),
+    );
+  }, [mp4Formats, platform]);
 
   useEffect(() => {
     if (isOpen) {
@@ -192,7 +209,8 @@ export default function DownloadModal({
                 Ready to Download?
               </h3>
               <p className="text-slate-500 dark:text-slate-400 text-sm mb-8 leading-relaxed">
-                You are about to download <strong>{result?.title}</strong> in <strong>{selectedFormat?.quality}</strong>.
+                You are about to download <strong>{result?.title}</strong> in{" "}
+                <strong>{selectedFormat?.quality}</strong>.
               </p>
               <div className="flex flex-col gap-3">
                 <button
@@ -215,7 +233,10 @@ export default function DownloadModal({
           </div>
         )}
         <div className="px-6 md:px-8 pt-6 pb-4 flex justify-between items-center border-b border-slate-100 dark:border-slate-800">
-          <h2 id="modal-title" className="text-xl md:text-2xl font-bold text-primary">
+          <h2
+            id="modal-title"
+            className="text-xl md:text-2xl font-bold text-primary"
+          >
             Download Options
           </h2>
           <button
@@ -245,12 +266,16 @@ export default function DownloadModal({
 
             <div className="min-w-0 flex-1 flex flex-col justify-center">
               <div className="flex items-center gap-2 mb-2">
-                <span className={`${platformColor} text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1`}>
+                <span
+                  className={`${platformColor} text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1`}
+                >
                   <PlatformIcon size={12} weight="fill" />
                   {platformLabel}
                 </span>
                 {isLoading ? (
-                  <span className="text-slate-400 text-xs">Resolving formats...</span>
+                  <span className="text-slate-400 text-xs">
+                    Resolving formats...
+                  </span>
                 ) : null}
               </div>
 
@@ -259,7 +284,10 @@ export default function DownloadModal({
               </h3>
 
               {sourceUrl ? (
-                <p className="text-xs text-slate-500 mt-2 truncate" title={sourceUrl}>
+                <p
+                  className="text-xs text-slate-500 mt-2 truncate"
+                  title={sourceUrl}
+                >
                   {sourceUrl}
                 </p>
               ) : null}
@@ -271,10 +299,23 @@ export default function DownloadModal({
               Direct MP4 Download
             </h4>
 
+            {platform === "instagram" ? (
+              <div className="mb-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+                <p className="font-bold">Pilih kualitas Instagram</p>
+                <p className="mt-1 text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Pilih resolusi lalu klik Download. Beberapa format bisa video-only
+                  (tanpa audio), tergantung sumber.
+                </p>
+              </div>
+            ) : null}
+
             {hasFormats ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {mp4Formats.map((format: ResolveFormat) => {
                   const isSelected = format.id === selectedFormatId;
+                  const isInstagramVideoOnly =
+                    platform === "instagram" &&
+                    String(format.id).toLowerCase().startsWith("dash-");
                   return (
                     <button
                       key={format.id}
@@ -295,9 +336,16 @@ export default function DownloadModal({
                         >
                           {format.quality}
                         </span>
-                        <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase">
-                          {format.container}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {isInstagramVideoOnly ? (
+                            <span className="text-[10px] px-2 py-1 rounded bg-amber-100 text-amber-900 uppercase font-bold">
+                              Video-only
+                            </span>
+                          ) : null}
+                          <span className="text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase">
+                            {format.container}
+                          </span>
+                        </div>
                       </div>
 
                       <p className="text-xs mt-2 text-slate-500 dark:text-slate-400">
@@ -310,11 +358,15 @@ export default function DownloadModal({
             ) : (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
                 <div className="flex items-start gap-2">
-                  <WarningCircle size={18} className="mt-0.5 flex-shrink-0 text-amber-700" />
+                  <WarningCircle
+                    size={18}
+                    className="mt-0.5 flex-shrink-0 text-amber-700"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-bold">Tidak menemukan opsi MP4</p>
                     <p className="mt-1">
-                      Coba gunakan video {platformLabel} publik lain, atau resolve ulang.
+                      Coba gunakan video {platformLabel} publik lain, atau
+                      resolve ulang.
                     </p>
                   </div>
                 </div>
@@ -345,12 +397,24 @@ export default function DownloadModal({
                   </p>
                   <ul className="mt-2 list-disc pl-5 text-amber-900/90 space-y-1">
                     <li>Pastikan link video (bukan playlist).</li>
-                    <li>Video private/age-restricted bisa gagal ter-resolve.</li>
-                    <li>Kalau video terlalu panjang/berat, coba video yang lebih singkat.</li>
+                    <li>
+                      Video private/age-restricted bisa gagal ter-resolve.
+                    </li>
+                    <li>
+                      Kalau video terlalu panjang/berat, coba video yang lebih
+                      singkat.
+                    </li>
                   </ul>
                 </div>
               </div>
             )}
+
+            {platform === "instagram" && instagramHasVideoOnly ? (
+              <p className="mt-3 text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                Catatan: label Video-only artinya file bisa tanpa audio. Ini perilaku
+                dari sumber Instagram (by design).
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-3">
@@ -359,7 +423,7 @@ export default function DownloadModal({
             </h4>
             <button
               onClick={onConfirmMp3}
-              disabled={!sourceUrl || isLoading}
+              disabled={!sourceUrl || isLoading || platform !== "youtube"}
               className="w-full flex items-center justify-between p-4 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-primary/60 transition-all group"
             >
               <div className="flex items-center gap-3">
@@ -367,11 +431,20 @@ export default function DownloadModal({
                   <MusicNotes size={20} weight="bold" />
                 </div>
                 <div className="text-left">
-                  <p className="font-bold text-slate-800 dark:text-slate-100">MP3 Audio</p>
-                  <p className="text-xs text-slate-500">128kbps • Queue processing</p>
+                  <p className="font-bold text-slate-800 dark:text-slate-100">
+                    MP3 Audio
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {platform === "youtube"
+                      ? "128kbps • Queue processing"
+                      : "Hanya tersedia untuk YouTube"}
+                  </p>
                 </div>
               </div>
-              <Download size={20} className="text-slate-400 group-hover:text-primary transition-colors" />
+              <Download
+                size={20}
+                className="text-slate-400 group-hover:text-primary transition-colors"
+              />
             </button>
           </div>
 
