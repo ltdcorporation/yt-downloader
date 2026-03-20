@@ -145,10 +145,14 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 
 	authStore := auth.NewStore(cfg, logger)
+	googleVerifier := auth.NewGoogleTokenVerifier(auth.GoogleTokenVerifierOptions{
+		ClientIDs: splitCommaSeparated(cfg.GoogleClientIDs),
+	})
 	authService := auth.NewService(authStore, auth.Options{
-		SessionTTL:         time.Duration(cfg.AuthSessionTTLHours) * time.Hour,
-		RememberSessionTTL: time.Duration(cfg.AuthRememberSessionTTLHours) * time.Hour,
-		BcryptCost:         cfg.AuthBcryptCost,
+		SessionTTL:          time.Duration(cfg.AuthSessionTTLHours) * time.Hour,
+		RememberSessionTTL:  time.Duration(cfg.AuthRememberSessionTTLHours) * time.Hour,
+		BcryptCost:          cfg.AuthBcryptCost,
+		GoogleTokenVerifier: googleVerifier,
 	})
 
 	return &Server{
@@ -196,6 +200,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/healthz", s.handleHealthz)
 	r.Post("/v1/auth/register", s.handleAuthRegister)
 	r.Post("/v1/auth/login", s.handleAuthLogin)
+	r.Post("/v1/auth/google", s.handleAuthGoogleLogin)
 	r.Get("/v1/auth/me", s.handleAuthMe)
 	r.Post("/v1/auth/logout", s.handleAuthLogout)
 	r.Post("/v1/youtube/resolve", s.handleResolveYouTube)
@@ -798,13 +803,27 @@ func buildMP3OutputKey(prefix, jobID string) string {
 	return strings.Join(segments, "/")
 }
 
-func parseAllowedOrigins(raw string) map[string]struct{} {
-	origins := make(map[string]struct{})
-	for _, part := range strings.Split(raw, ",") {
+func splitCommaSeparated(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
 		value := strings.TrimSpace(part)
 		if value == "" {
 			continue
 		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
+}
+
+func parseAllowedOrigins(raw string) map[string]struct{} {
+	origins := make(map[string]struct{})
+	for _, value := range splitCommaSeparated(raw) {
 		origins[value] = struct{}{}
 	}
 	if len(origins) == 0 {

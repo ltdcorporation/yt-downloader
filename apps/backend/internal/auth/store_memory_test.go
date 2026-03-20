@@ -97,6 +97,120 @@ func TestMemoryBackend_CreateUserAndSession(t *testing.T) {
 	}
 }
 
+func TestMemoryBackend_GoogleIdentityFlows(t *testing.T) {
+	backend := newMemoryBackend()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	user := User{ID: "usr_1", Email: "google@example.com", FullName: "Google User"}
+	if err := backend.CreateUser(ctx, user); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	identity := GoogleIdentity{
+		UserID:        user.ID,
+		GoogleSubject: "sub_1",
+		Email:         user.Email,
+		FullName:      user.FullName,
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	if err := backend.UpsertGoogleIdentity(ctx, identity); err != nil {
+		t.Fatalf("UpsertGoogleIdentity failed: %v", err)
+	}
+
+	resolvedUser, err := backend.GetUserByGoogleSubject(ctx, identity.GoogleSubject)
+	if err != nil {
+		t.Fatalf("GetUserByGoogleSubject failed: %v", err)
+	}
+	if resolvedUser.ID != user.ID {
+		t.Fatalf("unexpected user by google subject: %s", resolvedUser.ID)
+	}
+
+	if err := backend.UpsertGoogleIdentity(ctx, GoogleIdentity{
+		UserID:        user.ID,
+		GoogleSubject: identity.GoogleSubject,
+		Email:         "updated@example.com",
+		FullName:      "Updated Name",
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("google identity update should succeed: %v", err)
+	}
+
+	otherUser := User{ID: "usr_2", Email: "other@example.com", FullName: "Other User"}
+	if err := backend.CreateUser(ctx, otherUser); err != nil {
+		t.Fatalf("CreateUser other failed: %v", err)
+	}
+
+	if err := backend.UpsertGoogleIdentity(ctx, GoogleIdentity{
+		UserID:        otherUser.ID,
+		GoogleSubject: identity.GoogleSubject,
+		Email:         otherUser.Email,
+		FullName:      otherUser.FullName,
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict by duplicate subject, got %v", err)
+	}
+
+	if err := backend.UpsertGoogleIdentity(ctx, GoogleIdentity{
+		UserID:        user.ID,
+		GoogleSubject: "sub_2",
+		Email:         user.Email,
+		FullName:      user.FullName,
+		EmailVerified: true,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict by duplicate user_id mapping, got %v", err)
+	}
+
+	if _, err := backend.GetUserByGoogleSubject(ctx, "sub_missing"); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for missing subject, got %v", err)
+	}
+
+	if err := backend.UpsertGoogleIdentity(ctx, GoogleIdentity{
+		UserID:        "usr_missing",
+		GoogleSubject: "sub_missing",
+		Email:         "missing@example.com",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for missing user upsert, got %v", err)
+	}
+}
+
+func TestMemoryBackend_CreateUserSessionAndGoogleIdentity(t *testing.T) {
+	backend := newMemoryBackend()
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	user := User{ID: "usr_1", Email: "google@example.com", FullName: "Google User"}
+	session := Session{ID: "ses_1", UserID: user.ID, TokenHash: "hash_1"}
+	identity := GoogleIdentity{UserID: user.ID, GoogleSubject: "sub_1", Email: user.Email, FullName: user.FullName, CreatedAt: now, UpdatedAt: now, EmailVerified: true}
+
+	if err := backend.CreateUserSessionAndGoogleIdentity(ctx, user, session, identity); err != nil {
+		t.Fatalf("CreateUserSessionAndGoogleIdentity failed: %v", err)
+	}
+
+	if err := backend.CreateUserSessionAndGoogleIdentity(ctx, User{ID: "usr_2", Email: user.Email}, Session{ID: "ses_2", UserID: "usr_2", TokenHash: "hash_2"}, GoogleIdentity{UserID: "usr_2", GoogleSubject: "sub_2", Email: user.Email}); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("expected ErrEmailTaken, got %v", err)
+	}
+
+	if err := backend.CreateUserSessionAndGoogleIdentity(ctx, User{ID: "usr_3", Email: "third@example.com"}, Session{ID: "ses_3", UserID: "usr_3", TokenHash: session.TokenHash}, GoogleIdentity{UserID: "usr_3", GoogleSubject: "sub_3", Email: "third@example.com"}); !errors.Is(err, ErrInvalidSessionToken) {
+		t.Fatalf("expected ErrInvalidSessionToken, got %v", err)
+	}
+
+	if err := backend.CreateUserSessionAndGoogleIdentity(ctx, User{ID: "usr_4", Email: "fourth@example.com"}, Session{ID: "ses_4", UserID: "usr_4", TokenHash: "hash_4"}, GoogleIdentity{UserID: "usr_4", GoogleSubject: identity.GoogleSubject, Email: "fourth@example.com"}); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict, got %v", err)
+	}
+}
+
 func TestCopySession(t *testing.T) {
 	revokedAt := time.Now().UTC().Add(-time.Hour)
 	lastSeenAt := time.Now().UTC()

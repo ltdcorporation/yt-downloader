@@ -42,6 +42,7 @@
 - `GET /healthz`
 - `POST /v1/auth/register`
 - `POST /v1/auth/login`
+- `POST /v1/auth/google`
 - `GET /v1/auth/me`
 - `POST /v1/auth/logout`
 - `POST /v1/youtube/resolve`

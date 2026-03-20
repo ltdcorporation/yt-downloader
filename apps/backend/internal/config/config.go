@@ -47,6 +47,7 @@ type Config struct {
 	AuthSessionTTLHours         int
 	AuthRememberSessionTTLHours int
 	AuthBcryptCost              int
+	GoogleClientIDs             string
 
 	R2Endpoint        string
 	R2Region          string
@@ -61,6 +62,7 @@ type Config struct {
 func Load() Config {
 	appEnv := getenv("APP_ENV", "development")
 	authCookieSecureDefault := strings.EqualFold(appEnv, "production")
+	googleClientIDs := strings.TrimSpace(getenv("GOOGLE_CLIENT_IDS", getenv("GOOGLE_CLIENT_ID", "")))
 
 	return Config{
 		AppEnv:                      appEnv,
@@ -98,6 +100,7 @@ func Load() Config {
 		AuthSessionTTLHours:         getenvInt("AUTH_SESSION_TTL_HOURS", 24),
 		AuthRememberSessionTTLHours: getenvInt("AUTH_REMEMBER_SESSION_TTL_HOURS", 720),
 		AuthBcryptCost:              getenvInt("AUTH_BCRYPT_COST", 12),
+		GoogleClientIDs:             googleClientIDs,
 		R2Endpoint:                  getenv("R2_ENDPOINT", ""),
 		R2Region:                    getenv("R2_REGION", "auto"),
 		R2Bucket:                    getenv("R2_BUCKET", ""),

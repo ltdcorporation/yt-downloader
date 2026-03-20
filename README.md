@@ -101,6 +101,7 @@ make backend-build
 GET  /healthz
 POST /v1/auth/register      { full_name, email, password, keep_logged_in? }
 POST /v1/auth/login         { email, password, keep_logged_in? }
+POST /v1/auth/google        { id_token, keep_logged_in? }
 GET  /v1/auth/me            (Bearer token or HttpOnly session cookie)
 POST /v1/auth/logout        (idempotent; revokes active session)
 POST /v1/youtube/resolve    { url }
@@ -121,6 +122,7 @@ GET  /admin/jobs            (basic auth)
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
 - Auth endpoints issue cryptographically random session tokens, persist only token hash in storage, and set HttpOnly cookie (`AUTH_SESSION_COOKIE_*` vars).
+- Google login endpoint (`/v1/auth/google`) validates Google ID token server-side; set `GOOGLE_CLIENT_IDS` (comma-separated) or `GOOGLE_CLIENT_ID`.
 - Frontend defaults to Next.js proxy route (`/api/*`) to avoid CORS/cookie mismatch between `localhost:3000` and backend ports.
 - API resolves `YTDLP_BINARY` from `PATH` (`yt-dlp` by default), so runtime is not tied to one fixed absolute path.
 - X resolver supports multi-cookie fallback via `X_COOKIES_FILES` (comma-separated files) and/or `X_COOKIES_DIR` (directory scan). Public attempt can be toggled with `X_RESOLVE_TRY_WITHOUT_COOKIES`.

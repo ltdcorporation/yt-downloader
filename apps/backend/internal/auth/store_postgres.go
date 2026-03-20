@@ -48,10 +48,10 @@ func (p *postgresBackend) CreateUser(ctx context.Context, user User) error {
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
 	if err != nil {
-		if isPGUniqueViolation(err) {
-			return ErrEmailTaken
-		}
 		return fmt.Errorf("create auth user: %w", err)
 	}
 
@@ -81,10 +81,10 @@ func (p *postgresBackend) CreateUserAndSession(ctx context.Context, user User, s
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
 	if err != nil {
-		if isPGUniqueViolation(err) {
-			return ErrEmailTaken
-		}
 		return fmt.Errorf("create auth user (transaction): %w", err)
 	}
 
@@ -102,12 +102,92 @@ func (p *postgresBackend) CreateUserAndSession(ctx context.Context, user User, s
 		nullIfEmpty(session.UserAgent),
 		session.KeepLoggedIn,
 	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
 	if err != nil {
 		return fmt.Errorf("create auth session (transaction): %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit auth registration transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (p *postgresBackend) CreateUserSessionAndGoogleIdentity(ctx context.Context, user User, session Session, identity GoogleIdentity) error {
+	if err := p.ensureSchema(ctx); err != nil {
+		return err
+	}
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin auth google registration transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO auth_users (id, full_name, email, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		user.ID,
+		user.FullName,
+		user.Email,
+		user.PasswordHash,
+		user.CreatedAt,
+		user.UpdatedAt,
+	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
+	if err != nil {
+		return fmt.Errorf("create auth user (google transaction): %w", err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO auth_sessions (id, user_id, token_hash, created_at, expires_at, revoked_at, last_seen_at, client_ip, user_agent, keep_logged_in) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		session.ID,
+		session.UserID,
+		session.TokenHash,
+		session.CreatedAt,
+		session.ExpiresAt,
+		session.RevokedAt,
+		session.LastSeenAt,
+		nullIfEmpty(session.ClientIP),
+		nullIfEmpty(session.UserAgent),
+		session.KeepLoggedIn,
+	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
+	if err != nil {
+		return fmt.Errorf("create auth session (google transaction): %w", err)
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`INSERT INTO auth_google_identities (google_subject, user_id, email, full_name, picture_url, email_verified, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		identity.GoogleSubject,
+		identity.UserID,
+		identity.Email,
+		nullIfEmpty(identity.FullName),
+		nullIfEmpty(identity.PictureURL),
+		identity.EmailVerified,
+		identity.CreatedAt,
+		identity.UpdatedAt,
+	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
+	if err != nil {
+		return fmt.Errorf("create google identity (transaction): %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit auth google registration transaction: %w", err)
 	}
 
 	return nil
@@ -171,6 +251,38 @@ func (p *postgresBackend) GetUserByID(ctx context.Context, userID string) (User,
 	return user, nil
 }
 
+func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return User{}, err
+	}
+
+	row := p.db.QueryRowContext(
+		ctx,
+		`SELECT u.id, u.full_name, u.email, u.password_hash, u.created_at, u.updated_at
+		 FROM auth_google_identities gi
+		 JOIN auth_users u ON u.id = gi.user_id
+		 WHERE gi.google_subject = $1`,
+		googleSubject,
+	)
+
+	var user User
+	if err := row.Scan(
+		&user.ID,
+		&user.FullName,
+		&user.Email,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, fmt.Errorf("get auth user by google subject: %w", err)
+	}
+
+	return user, nil
+}
+
 func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
 	if err := p.ensureSchema(ctx); err != nil {
 		return err
@@ -190,10 +302,10 @@ func (p *postgresBackend) CreateSession(ctx context.Context, session Session) er
 		nullIfEmpty(session.UserAgent),
 		session.KeepLoggedIn,
 	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
 	if err != nil {
-		if isPGUniqueViolation(err) {
-			return ErrInvalidSessionToken
-		}
 		return fmt.Errorf("create auth session: %w", err)
 	}
 
@@ -292,6 +404,45 @@ func (p *postgresBackend) RevokeSessionByTokenHash(ctx context.Context, tokenHas
 	return nil
 }
 
+func (p *postgresBackend) UpsertGoogleIdentity(ctx context.Context, identity GoogleIdentity) error {
+	if err := p.ensureSchema(ctx); err != nil {
+		return err
+	}
+
+	result, err := p.db.ExecContext(
+		ctx,
+		`INSERT INTO auth_google_identities (google_subject, user_id, email, full_name, picture_url, email_verified, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 ON CONFLICT (google_subject) DO UPDATE
+		 SET email = EXCLUDED.email,
+		     full_name = EXCLUDED.full_name,
+		     picture_url = EXCLUDED.picture_url,
+		     email_verified = EXCLUDED.email_verified,
+		     updated_at = EXCLUDED.updated_at
+		 WHERE auth_google_identities.user_id = EXCLUDED.user_id`,
+		identity.GoogleSubject,
+		identity.UserID,
+		identity.Email,
+		nullIfEmpty(identity.FullName),
+		nullIfEmpty(identity.PictureURL),
+		identity.EmailVerified,
+		identity.CreatedAt,
+		identity.UpdatedAt,
+	)
+	if mappedErr := mapUniqueViolationError(err); mappedErr != nil {
+		return mappedErr
+	}
+	if err != nil {
+		return fmt.Errorf("upsert google identity: %w", err)
+	}
+
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrGoogleIdentityConflict
+	}
+
+	return nil
+}
+
 func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 	p.schemaMu.Lock()
 	defer p.schemaMu.Unlock()
@@ -334,6 +485,25 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON auth_sessions (token_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions (user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions (expires_at)`,
+		`
+		CREATE TABLE IF NOT EXISTS auth_google_identities (
+			google_subject TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+			email TEXT NOT NULL,
+			full_name TEXT,
+			picture_url TEXT,
+			email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL
+		)
+		`,
+		`ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS full_name TEXT`,
+		`ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS picture_url TEXT`,
+		`ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE`,
+		`ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ`,
+		`ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_google_identities_user_id ON auth_google_identities (user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_auth_google_identities_email ON auth_google_identities (email)`,
 	}
 
 	for _, statement := range statements {
@@ -359,4 +529,37 @@ func isPGUniqueViolation(err error) bool {
 		return pgErr.Code == "23505"
 	}
 	return false
+}
+
+func mapUniqueViolationError(err error) error {
+	if !isPGUniqueViolation(err) {
+		return nil
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return nil
+	}
+
+	constraint := strings.ToLower(strings.TrimSpace(pgErr.ConstraintName))
+	switch {
+	case strings.Contains(constraint, "auth_users") || strings.Contains(constraint, "idx_auth_users_email"):
+		return ErrEmailTaken
+	case strings.Contains(constraint, "auth_sessions") || strings.Contains(constraint, "idx_auth_sessions_token_hash"):
+		return ErrInvalidSessionToken
+	case strings.Contains(constraint, "auth_google_identities") || strings.Contains(constraint, "idx_auth_google_identities"):
+		return ErrGoogleIdentityConflict
+	}
+
+	detail := strings.ToLower(pgErr.Detail + " " + pgErr.Message)
+	switch {
+	case strings.Contains(detail, "auth_users") && strings.Contains(detail, "email"):
+		return ErrEmailTaken
+	case strings.Contains(detail, "auth_sessions") && strings.Contains(detail, "token"):
+		return ErrInvalidSessionToken
+	case strings.Contains(detail, "auth_google_identities") && (strings.Contains(detail, "google_subject") || strings.Contains(detail, "user_id")):
+		return ErrGoogleIdentityConflict
+	}
+
+	return nil
 }

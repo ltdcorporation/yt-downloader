@@ -12,15 +12,18 @@ import (
 )
 
 type fakeBackend struct {
-	createUserFn               func(ctx context.Context, user User) error
-	createUserAndSessionFn     func(ctx context.Context, user User, session Session) error
-	getUserByEmailFn           func(ctx context.Context, email string) (User, error)
-	getUserByIDFn              func(ctx context.Context, userID string) (User, error)
-	createSessionFn            func(ctx context.Context, session Session) error
-	getSessionByTokenHashFn    func(ctx context.Context, tokenHash string) (Session, error)
-	touchSessionFn             func(ctx context.Context, tokenHash string, touchedAt time.Time) error
-	revokeSessionByTokenHashFn func(ctx context.Context, tokenHash string, revokedAt time.Time) error
-	closeFn                    func() error
+	createUserFn                         func(ctx context.Context, user User) error
+	createUserAndSessionFn               func(ctx context.Context, user User, session Session) error
+	createUserSessionAndGoogleIdentityFn func(ctx context.Context, user User, session Session, identity GoogleIdentity) error
+	getUserByEmailFn                     func(ctx context.Context, email string) (User, error)
+	getUserByIDFn                        func(ctx context.Context, userID string) (User, error)
+	getUserByGoogleSubjectFn             func(ctx context.Context, googleSubject string) (User, error)
+	createSessionFn                      func(ctx context.Context, session Session) error
+	getSessionByTokenHashFn              func(ctx context.Context, tokenHash string) (Session, error)
+	touchSessionFn                       func(ctx context.Context, tokenHash string, touchedAt time.Time) error
+	revokeSessionByTokenHashFn           func(ctx context.Context, tokenHash string, revokedAt time.Time) error
+	upsertGoogleIdentityFn               func(ctx context.Context, identity GoogleIdentity) error
+	closeFn                              func() error
 }
 
 func (f *fakeBackend) CreateUser(ctx context.Context, user User) error {
@@ -37,6 +40,13 @@ func (f *fakeBackend) CreateUserAndSession(ctx context.Context, user User, sessi
 	return nil
 }
 
+func (f *fakeBackend) CreateUserSessionAndGoogleIdentity(ctx context.Context, user User, session Session, identity GoogleIdentity) error {
+	if f.createUserSessionAndGoogleIdentityFn != nil {
+		return f.createUserSessionAndGoogleIdentityFn(ctx, user, session, identity)
+	}
+	return nil
+}
+
 func (f *fakeBackend) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	if f.getUserByEmailFn != nil {
 		return f.getUserByEmailFn(ctx, email)
@@ -49,6 +59,13 @@ func (f *fakeBackend) GetUserByID(ctx context.Context, userID string) (User, err
 		return f.getUserByIDFn(ctx, userID)
 	}
 	return User{}, nil
+}
+
+func (f *fakeBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
+	if f.getUserByGoogleSubjectFn != nil {
+		return f.getUserByGoogleSubjectFn(ctx, googleSubject)
+	}
+	return User{}, ErrUserNotFound
 }
 
 func (f *fakeBackend) CreateSession(ctx context.Context, session Session) error {
@@ -75,6 +92,13 @@ func (f *fakeBackend) TouchSession(ctx context.Context, tokenHash string, touche
 func (f *fakeBackend) RevokeSessionByTokenHash(ctx context.Context, tokenHash string, revokedAt time.Time) error {
 	if f.revokeSessionByTokenHashFn != nil {
 		return f.revokeSessionByTokenHashFn(ctx, tokenHash, revokedAt)
+	}
+	return nil
+}
+
+func (f *fakeBackend) UpsertGoogleIdentity(ctx context.Context, identity GoogleIdentity) error {
+	if f.upsertGoogleIdentityFn != nil {
+		return f.upsertGoogleIdentityFn(ctx, identity)
 	}
 	return nil
 }
@@ -122,11 +146,17 @@ func TestStore_NilSafetyGuards(t *testing.T) {
 	if err := s.CreateUserAndSession(ctx, User{}, Session{}); err == nil {
 		t.Fatalf("expected error for uninitialized CreateUserAndSession")
 	}
+	if err := s.CreateUserSessionAndGoogleIdentity(ctx, User{}, Session{}, GoogleIdentity{}); err == nil {
+		t.Fatalf("expected error for uninitialized CreateUserSessionAndGoogleIdentity")
+	}
 	if _, err := s.GetUserByEmail(ctx, "a@example.com"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByEmail")
 	}
 	if _, err := s.GetUserByID(ctx, "usr"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByID")
+	}
+	if _, err := s.GetUserByGoogleSubject(ctx, "sub"); err == nil {
+		t.Fatalf("expected error for uninitialized GetUserByGoogleSubject")
 	}
 	if err := s.CreateSession(ctx, Session{}); err == nil {
 		t.Fatalf("expected error for uninitialized CreateSession")
@@ -140,6 +170,9 @@ func TestStore_NilSafetyGuards(t *testing.T) {
 	if err := s.RevokeSessionByTokenHash(ctx, "hash", time.Now()); err == nil {
 		t.Fatalf("expected error for uninitialized RevokeSessionByTokenHash")
 	}
+	if err := s.UpsertGoogleIdentity(ctx, GoogleIdentity{}); err == nil {
+		t.Fatalf("expected error for uninitialized UpsertGoogleIdentity")
+	}
 }
 
 func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
@@ -149,6 +182,8 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	capturedTokenHash := ""
 	capturedTouch := time.Time{}
 	capturedRevoke := time.Time{}
+	capturedGoogleSubject := ""
+	capturedIdentity := GoogleIdentity{}
 
 	backend := &fakeBackend{
 		createUserFn: func(_ context.Context, user User) error {
@@ -163,6 +198,13 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 			}
 			return nil
 		},
+		createUserSessionAndGoogleIdentityFn: func(_ context.Context, user User, session Session, identity GoogleIdentity) error {
+			if user.ID == "" || session.ID == "" || identity.GoogleSubject == "" {
+				t.Fatalf("expected user/session/google identity fields")
+			}
+			capturedIdentity = identity
+			return nil
+		},
 		getUserByEmailFn: func(_ context.Context, email string) (User, error) {
 			capturedEmail = email
 			return User{Email: email}, nil
@@ -170,6 +212,10 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 		getUserByIDFn: func(_ context.Context, userID string) (User, error) {
 			capturedUserID = userID
 			return User{ID: userID}, nil
+		},
+		getUserByGoogleSubjectFn: func(_ context.Context, googleSubject string) (User, error) {
+			capturedGoogleSubject = googleSubject
+			return User{ID: "usr_google"}, nil
 		},
 		createSessionFn: func(_ context.Context, session Session) error {
 			if session.TokenHash == "" {
@@ -191,6 +237,10 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 			capturedRevoke = revokedAt
 			return nil
 		},
+		upsertGoogleIdentityFn: func(_ context.Context, identity GoogleIdentity) error {
+			capturedIdentity = identity
+			return nil
+		},
 		closeFn: func() error {
 			return nil
 		},
@@ -203,6 +253,12 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if err := s.CreateUserAndSession(ctx, User{ID: "usr_1"}, Session{ID: "ses_1"}); err != nil {
 		t.Fatalf("CreateUserAndSession returned error: %v", err)
+	}
+	if err := s.CreateUserSessionAndGoogleIdentity(ctx, User{ID: "usr_2"}, Session{ID: "ses_2"}, GoogleIdentity{GoogleSubject: "sub_1", Email: "USER@Example.COM"}); err != nil {
+		t.Fatalf("CreateUserSessionAndGoogleIdentity returned error: %v", err)
+	}
+	if capturedIdentity.GoogleSubject != "sub_1" || capturedIdentity.Email != "user@example.com" {
+		t.Fatalf("unexpected normalized google identity: %+v", capturedIdentity)
 	}
 
 	if _, err := s.GetUserByEmail(ctx, "  USER@Example.COM "); err != nil {
@@ -217,6 +273,13 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if capturedUserID != "usr_abc" {
 		t.Fatalf("expected normalized user id, got %q", capturedUserID)
+	}
+
+	if _, err := s.GetUserByGoogleSubject(ctx, "  sub_abc  "); err != nil {
+		t.Fatalf("GetUserByGoogleSubject returned error: %v", err)
+	}
+	if capturedGoogleSubject != "sub_abc" {
+		t.Fatalf("expected normalized google subject, got %q", capturedGoogleSubject)
 	}
 
 	if err := s.CreateSession(ctx, Session{TokenHash: "abc"}); err != nil {
@@ -243,6 +306,13 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if capturedTokenHash != "abcdef" || !capturedRevoke.Equal(now) {
 		t.Fatalf("unexpected revoke capture token=%q revoked=%s", capturedTokenHash, capturedRevoke)
+	}
+
+	if err := s.UpsertGoogleIdentity(ctx, GoogleIdentity{GoogleSubject: "  sub_new ", Email: "  NEW@EXAMPLE.COM ", UserID: "usr_1"}); err != nil {
+		t.Fatalf("UpsertGoogleIdentity returned error: %v", err)
+	}
+	if capturedIdentity.GoogleSubject != "sub_new" || capturedIdentity.Email != "new@example.com" {
+		t.Fatalf("unexpected upsert google identity payload: %+v", capturedIdentity)
 	}
 
 	if err := s.Close(); err != nil {

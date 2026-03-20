@@ -26,6 +26,11 @@ type authLoginRequest struct {
 	KeepLoggedIn bool   `json:"keep_logged_in"`
 }
 
+type authGoogleLoginRequest struct {
+	IDToken      string `json:"id_token"`
+	KeepLoggedIn bool   `json:"keep_logged_in"`
+}
+
 type authMeResponse struct {
 	User      auth.PublicUser `json:"user"`
 	ExpiresAt time.Time       `json:"expires_at"`
@@ -88,6 +93,33 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleAuthGoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
+		return
+	}
+
+	var req authGoogleLoginRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	result, err := s.authService.LoginWithGoogle(r.Context(), auth.GoogleLoginInput{
+		IDToken:      req.IDToken,
+		KeepLoggedIn: req.KeepLoggedIn,
+		ClientIP:     getClientIP(r),
+		UserAgent:    r.UserAgent(),
+	})
+	if err != nil {
+		s.writeAuthError(w, "", "google_login", err)
+		return
+	}
+
+	s.setSessionCookie(w, result.AccessToken, result.ExpiresAt)
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
@@ -138,6 +170,26 @@ func (s *Server) writeAuthError(w http.ResponseWriter, email, action string, err
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
 			"error": "invalid email or password",
 			"code":  "invalid_credentials",
+		})
+	case errors.Is(err, auth.ErrGoogleAuthDisabled):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"error": "google auth is not configured",
+			"code":  "google_auth_unavailable",
+		})
+	case errors.Is(err, auth.ErrGoogleTokenInvalid):
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "invalid google token",
+			"code":  "google_token_invalid",
+		})
+	case errors.Is(err, auth.ErrGoogleEmailUnverified):
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "google email is not verified",
+			"code":  "google_email_unverified",
+		})
+	case errors.Is(err, auth.ErrGoogleIdentityConflict):
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": "google account is linked to another user",
+			"code":  "google_identity_conflict",
 		})
 	default:
 		s.logger.Printf("auth %s failed email=%s err=%v", action, strings.TrimSpace(email), err)

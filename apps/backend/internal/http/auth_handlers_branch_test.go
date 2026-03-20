@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -13,6 +14,17 @@ import (
 
 	"yt-downloader/backend/internal/auth"
 )
+
+type fakeHTTPGoogleVerifier struct {
+	verifyFn func(ctx context.Context, rawIDToken string) (auth.GoogleTokenClaims, error)
+}
+
+func (f fakeHTTPGoogleVerifier) Verify(ctx context.Context, rawIDToken string) (auth.GoogleTokenClaims, error) {
+	if f.verifyFn != nil {
+		return f.verifyFn(ctx, rawIDToken)
+	}
+	return auth.GoogleTokenClaims{}, nil
+}
 
 func TestAuthHandlers_ServiceUnavailable(t *testing.T) {
 	cfg := baseTestConfig()
@@ -28,6 +40,7 @@ func TestAuthHandlers_ServiceUnavailable(t *testing.T) {
 	}{
 		{name: "register", method: http.MethodPost, path: "/v1/auth/register", body: `{"full_name":"A","email":"a@example.com","password":"StrongPass123"}`},
 		{name: "login", method: http.MethodPost, path: "/v1/auth/login", body: `{"email":"a@example.com","password":"StrongPass123"}`},
+		{name: "google-login", method: http.MethodPost, path: "/v1/auth/google", body: `{"id_token":"dummy"}`},
 		{name: "me", method: http.MethodGet, path: "/v1/auth/me"},
 		{name: "logout", method: http.MethodPost, path: "/v1/auth/logout"},
 	}
@@ -140,6 +153,41 @@ func TestAuthMeAndLogoutAdditionalPaths(t *testing.T) {
 	}
 }
 
+func TestAuth_GoogleLoginFlow(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+	server.authService = auth.NewService(server.authStore, auth.Options{
+		GoogleTokenVerifier: fakeHTTPGoogleVerifier{
+			verifyFn: func(_ context.Context, rawIDToken string) (auth.GoogleTokenClaims, error) {
+				if rawIDToken != "google-id-token" {
+					return auth.GoogleTokenClaims{}, auth.ErrGoogleTokenInvalid
+				}
+				return auth.GoogleTokenClaims{Subject: "sub_http", Email: "http-google@example.com", EmailVerified: true, FullName: "HTTP Google"}, nil
+			},
+		},
+	})
+	handler := server.Handler()
+
+	invalidReq := httptest.NewRequest(http.MethodPost, "/v1/auth/google", strings.NewReader(`{"id_token":"bad-token"}`))
+	invalidReq.Header.Set("Content-Type", "application/json")
+	invalidRec := httptest.NewRecorder()
+	handler.ServeHTTP(invalidRec, invalidReq)
+	if invalidRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for invalid google token, got %d body=%s", invalidRec.Code, invalidRec.Body.String())
+	}
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/v1/auth/google", strings.NewReader(`{"id_token":"google-id-token","keep_logged_in":true}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for google login, got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+	if !strings.Contains(loginRec.Header().Get("Set-Cookie"), "qs_session=") {
+		t.Fatalf("expected auth session cookie from google login, got %q", loginRec.Header().Get("Set-Cookie"))
+	}
+}
+
 func TestWriteAuthError(t *testing.T) {
 	s := &Server{logger: log.New(io.Discard, "", 0)}
 
@@ -159,6 +207,30 @@ func TestWriteAuthError(t *testing.T) {
 	s.writeAuthError(rec, "x@example.com", "login", auth.ErrInvalidCredentials)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 invalid credentials, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	s.writeAuthError(rec, "x@example.com", "google_login", auth.ErrGoogleAuthDisabled)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 google disabled, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	s.writeAuthError(rec, "x@example.com", "google_login", auth.ErrGoogleTokenInvalid)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 invalid google token, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	s.writeAuthError(rec, "x@example.com", "google_login", auth.ErrGoogleEmailUnverified)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 google email unverified, got %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	s.writeAuthError(rec, "x@example.com", "google_login", auth.ErrGoogleIdentityConflict)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 google identity conflict, got %d", rec.Code)
 	}
 
 	rec = httptest.NewRecorder()
@@ -240,6 +312,14 @@ func TestAuthHandlers_UninitializedServiceErrors(t *testing.T) {
 	handler.ServeHTTP(loginRec, loginReq)
 	if loginRec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected login 500 for uninitialized service, got %d body=%s", loginRec.Code, loginRec.Body.String())
+	}
+
+	googleReq := httptest.NewRequest(http.MethodPost, "/v1/auth/google", strings.NewReader(`{"id_token":"dummy"}`))
+	googleReq.Header.Set("Content-Type", "application/json")
+	googleRec := httptest.NewRecorder()
+	handler.ServeHTTP(googleRec, googleReq)
+	if googleRec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected google login 500 for uninitialized service, got %d body=%s", googleRec.Code, googleRec.Body.String())
 	}
 
 	logoutReq := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)

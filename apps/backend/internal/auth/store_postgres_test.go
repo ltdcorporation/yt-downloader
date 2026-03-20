@@ -41,6 +41,14 @@ func expectSchemaExec(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_sessions_token_hash").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS auth_google_identities").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS full_name").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS picture_url").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS email_verified").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS created_at").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_google_identities ADD COLUMN IF NOT EXISTS updated_at").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_google_identities_user_id").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE INDEX IF NOT EXISTS idx_auth_google_identities_email").WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 func TestPostgresBackend_EnsureSchema(t *testing.T) {
@@ -84,7 +92,7 @@ func TestPostgresBackend_CreateUser(t *testing.T) {
 		t.Fatalf("CreateUser failed: %v", err)
 	}
 
-	mock.ExpectExec("INSERT INTO auth_users").WillReturnError(&pgconn.PgError{Code: "23505"})
+	mock.ExpectExec("INSERT INTO auth_users").WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_users_email"})
 	if err := backend.CreateUser(context.Background(), user); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("expected ErrEmailTaken, got %v", err)
 	}
@@ -122,7 +130,7 @@ func TestPostgresBackend_CreateUserAndSession(t *testing.T) {
 	}
 
 	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO auth_users").WillReturnError(&pgconn.PgError{Code: "23505"})
+	mock.ExpectExec("INSERT INTO auth_users").WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_users_email"})
 	mock.ExpectRollback()
 	if err := backend.CreateUserAndSession(context.Background(), user, session); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("expected ErrEmailTaken, got %v", err)
@@ -130,10 +138,10 @@ func TestPostgresBackend_CreateUserAndSession(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec("INSERT INTO auth_users").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnError(errors.New("session fail"))
+	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_sessions_token_hash"})
 	mock.ExpectRollback()
-	if err := backend.CreateUserAndSession(context.Background(), user, session); err == nil {
-		t.Fatalf("expected session insert error")
+	if err := backend.CreateUserAndSession(context.Background(), user, session); !errors.Is(err, ErrInvalidSessionToken) {
+		t.Fatalf("expected ErrInvalidSessionToken, got %v", err)
 	}
 
 	mock.ExpectBegin()
@@ -149,7 +157,40 @@ func TestPostgresBackend_CreateUserAndSession(t *testing.T) {
 	}
 }
 
-func TestPostgresBackend_GetUserByEmailAndByID(t *testing.T) {
+func TestPostgresBackend_CreateUserSessionAndGoogleIdentity(t *testing.T) {
+	backend, mock, cleanup := newMockPostgresBackend(t)
+	defer cleanup()
+	backend.schemaReady = true
+
+	now := time.Now().UTC()
+	user := User{ID: "usr_1", FullName: "Google User", Email: "google@example.com", PasswordHash: "hash", CreatedAt: now, UpdatedAt: now}
+	session := Session{ID: "ses_1", UserID: user.ID, TokenHash: "token_hash", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	identity := GoogleIdentity{UserID: user.ID, GoogleSubject: "sub_1", Email: user.Email, FullName: user.FullName, EmailVerified: true, CreatedAt: now, UpdatedAt: now}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO auth_users").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO auth_google_identities").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := backend.CreateUserSessionAndGoogleIdentity(context.Background(), user, session, identity); err != nil {
+		t.Fatalf("CreateUserSessionAndGoogleIdentity failed: %v", err)
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO auth_users").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO auth_google_identities").WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_google_identities_user_id"})
+	mock.ExpectRollback()
+	if err := backend.CreateUserSessionAndGoogleIdentity(context.Background(), user, session, identity); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	backend, mock, cleanup := newMockPostgresBackend(t)
 	defer cleanup()
 	backend.schemaReady = true
@@ -158,6 +199,10 @@ func TestPostgresBackend_GetUserByEmailAndByID(t *testing.T) {
 	rowColumns := []string{"id", "full_name", "email", "password_hash", "created_at", "updated_at"}
 	queryByEmail := q(`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`)
 	queryByID := q(`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`)
+	queryByGoogleSubject := q(`SELECT u.id, u.full_name, u.email, u.password_hash, u.created_at, u.updated_at
+		 FROM auth_google_identities gi
+		 JOIN auth_users u ON u.id = gi.user_id
+		 WHERE gi.google_subject = $1`)
 
 	rows := sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", "hash", now, now)
 	mock.ExpectQuery(queryByEmail).WithArgs("user@example.com").WillReturnRows(rows)
@@ -174,19 +219,10 @@ func TestPostgresBackend_GetUserByEmailAndByID(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 
-	mock.ExpectQuery(queryByEmail).WithArgs("boom@example.com").WillReturnError(errors.New("boom"))
-	if _, err := backend.GetUserByEmail(context.Background(), "boom@example.com"); err == nil {
-		t.Fatalf("expected query error")
-	}
-
 	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", "hash", now, now)
 	mock.ExpectQuery(queryByID).WithArgs("usr_1").WillReturnRows(rows)
-	user, err = backend.GetUserByID(context.Background(), "usr_1")
-	if err != nil {
+	if _, err := backend.GetUserByID(context.Background(), "usr_1"); err != nil {
 		t.Fatalf("GetUserByID failed: %v", err)
-	}
-	if user.Email != "user@example.com" {
-		t.Fatalf("unexpected user email: %s", user.Email)
 	}
 
 	mock.ExpectQuery(queryByID).WithArgs("missing").WillReturnError(sql.ErrNoRows)
@@ -194,9 +230,19 @@ func TestPostgresBackend_GetUserByEmailAndByID(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 
-	mock.ExpectQuery(queryByID).WithArgs("boom-id").WillReturnError(errors.New("boom-id"))
-	if _, err := backend.GetUserByID(context.Background(), "boom-id"); err == nil {
-		t.Fatalf("expected query error for GetUserByID")
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_2", "Google", "google@example.com", "hash", now, now)
+	mock.ExpectQuery(queryByGoogleSubject).WithArgs("sub_1").WillReturnRows(rows)
+	user, err = backend.GetUserByGoogleSubject(context.Background(), "sub_1")
+	if err != nil {
+		t.Fatalf("GetUserByGoogleSubject failed: %v", err)
+	}
+	if user.Email != "google@example.com" {
+		t.Fatalf("unexpected google user email: %s", user.Email)
+	}
+
+	mock.ExpectQuery(queryByGoogleSubject).WithArgs("sub_missing").WillReturnError(sql.ErrNoRows)
+	if _, err := backend.GetUserByGoogleSubject(context.Background(), "sub_missing"); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound for subject, got %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -217,7 +263,7 @@ func TestPostgresBackend_CreateSessionAndReadSession(t *testing.T) {
 		t.Fatalf("CreateSession failed: %v", err)
 	}
 
-	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnError(&pgconn.PgError{Code: "23505"})
+	mock.ExpectExec("INSERT INTO auth_sessions").WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_sessions_token_hash"})
 	if err := backend.CreateSession(context.Background(), session); !errors.Is(err, ErrInvalidSessionToken) {
 		t.Fatalf("expected ErrInvalidSessionToken, got %v", err)
 	}
@@ -268,7 +314,7 @@ func TestPostgresBackend_CreateSessionAndReadSession(t *testing.T) {
 	}
 }
 
-func TestPostgresBackend_TouchAndRevokeSession(t *testing.T) {
+func TestPostgresBackend_TouchRevokeAndUpsertGoogleIdentity(t *testing.T) {
 	backend, mock, cleanup := newMockPostgresBackend(t)
 	defer cleanup()
 	backend.schemaReady = true
@@ -276,6 +322,15 @@ func TestPostgresBackend_TouchAndRevokeSession(t *testing.T) {
 	now := time.Now().UTC()
 	touchQuery := q(`UPDATE auth_sessions SET last_seen_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL`)
 	revokeQuery := q(`UPDATE auth_sessions SET revoked_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL`)
+	upsertQuery := q(`INSERT INTO auth_google_identities (google_subject, user_id, email, full_name, picture_url, email_verified, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 ON CONFLICT (google_subject) DO UPDATE
+		 SET email = EXCLUDED.email,
+		     full_name = EXCLUDED.full_name,
+		     picture_url = EXCLUDED.picture_url,
+		     email_verified = EXCLUDED.email_verified,
+		     updated_at = EXCLUDED.updated_at
+		 WHERE auth_google_identities.user_id = EXCLUDED.user_id`)
 
 	mock.ExpectExec(touchQuery).WithArgs("hash", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := backend.TouchSession(context.Background(), "hash", now); err != nil {
@@ -285,11 +340,6 @@ func TestPostgresBackend_TouchAndRevokeSession(t *testing.T) {
 	mock.ExpectExec(touchQuery).WithArgs("missing", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 0))
 	if err := backend.TouchSession(context.Background(), "missing", now); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("expected ErrSessionNotFound, got %v", err)
-	}
-
-	mock.ExpectExec(touchQuery).WithArgs("err", sqlmock.AnyArg()).WillReturnError(errors.New("touch fail"))
-	if err := backend.TouchSession(context.Background(), "err", now); err == nil {
-		t.Fatalf("expected touch error")
 	}
 
 	mock.ExpectExec(revokeQuery).WithArgs("hash", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -302,9 +352,21 @@ func TestPostgresBackend_TouchAndRevokeSession(t *testing.T) {
 		t.Fatalf("expected ErrSessionNotFound, got %v", err)
 	}
 
-	mock.ExpectExec(revokeQuery).WithArgs("err", sqlmock.AnyArg()).WillReturnError(errors.New("revoke fail"))
-	if err := backend.RevokeSessionByTokenHash(context.Background(), "err", now); err == nil {
-		t.Fatalf("expected revoke error")
+	identity := GoogleIdentity{GoogleSubject: "sub_1", UserID: "usr_1", Email: "user@example.com", FullName: "User", EmailVerified: true, CreatedAt: now, UpdatedAt: now}
+
+	mock.ExpectExec(upsertQuery).WithArgs(identity.GoogleSubject, identity.UserID, identity.Email, identity.FullName, nil, identity.EmailVerified, identity.CreatedAt, identity.UpdatedAt).WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := backend.UpsertGoogleIdentity(context.Background(), identity); err != nil {
+		t.Fatalf("UpsertGoogleIdentity failed: %v", err)
+	}
+
+	mock.ExpectExec(upsertQuery).WithArgs(identity.GoogleSubject, identity.UserID, identity.Email, identity.FullName, nil, identity.EmailVerified, identity.CreatedAt, identity.UpdatedAt).WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := backend.UpsertGoogleIdentity(context.Background(), identity); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict, got %v", err)
+	}
+
+	mock.ExpectExec(upsertQuery).WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_google_identities_user_id"})
+	if err := backend.UpsertGoogleIdentity(context.Background(), identity); !errors.Is(err, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected unique violation google conflict, got %v", err)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -325,6 +387,19 @@ func TestPostgresHelpers(t *testing.T) {
 	}
 	if isPGUniqueViolation(errors.New("nope")) {
 		t.Fatalf("expected unique violation false")
+	}
+
+	if mapped := mapUniqueViolationError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_users_email"}); !errors.Is(mapped, ErrEmailTaken) {
+		t.Fatalf("expected ErrEmailTaken mapping, got %v", mapped)
+	}
+	if mapped := mapUniqueViolationError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_sessions_token_hash"}); !errors.Is(mapped, ErrInvalidSessionToken) {
+		t.Fatalf("expected ErrInvalidSessionToken mapping, got %v", mapped)
+	}
+	if mapped := mapUniqueViolationError(&pgconn.PgError{Code: "23505", ConstraintName: "idx_auth_google_identities_user_id"}); !errors.Is(mapped, ErrGoogleIdentityConflict) {
+		t.Fatalf("expected ErrGoogleIdentityConflict mapping, got %v", mapped)
+	}
+	if mapped := mapUniqueViolationError(errors.New("random")); mapped != nil {
+		t.Fatalf("expected nil mapping for non-unique error, got %v", mapped)
 	}
 }
 

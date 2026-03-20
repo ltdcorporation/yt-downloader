@@ -38,6 +38,8 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("AUTH_SESSION_TTL_HOURS", "")
 	t.Setenv("AUTH_REMEMBER_SESSION_TTL_HOURS", "")
 	t.Setenv("AUTH_BCRYPT_COST", "")
+	t.Setenv("GOOGLE_CLIENT_IDS", "")
+	t.Setenv("GOOGLE_CLIENT_ID", "")
 	t.Setenv("R2_ENDPOINT", "")
 	t.Setenv("R2_REGION", "")
 	t.Setenv("R2_BUCKET", "")
@@ -99,8 +101,21 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.AuthBcryptCost != 12 {
 		t.Fatalf("unexpected AUTH_BCRYPT_COST default: %d", cfg.AuthBcryptCost)
 	}
+	if cfg.GoogleClientIDs != "" {
+		t.Fatalf("unexpected GOOGLE_CLIENT_IDS default: %q", cfg.GoogleClientIDs)
+	}
 	if cfg.CORSAllowedOrigins != "http://127.0.0.1:3000,http://localhost:3000" {
 		t.Fatalf("unexpected default CORS origins: %s", cfg.CORSAllowedOrigins)
+	}
+}
+
+func TestLoad_UsesSingleGoogleClientIDFallback(t *testing.T) {
+	t.Setenv("GOOGLE_CLIENT_IDS", "")
+	t.Setenv("GOOGLE_CLIENT_ID", "single-client.apps.googleusercontent.com")
+
+	cfg := Load()
+	if cfg.GoogleClientIDs != "single-client.apps.googleusercontent.com" {
+		t.Fatalf("expected GOOGLE_CLIENT_ID fallback, got %q", cfg.GoogleClientIDs)
 	}
 }
 
@@ -136,6 +151,7 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("AUTH_SESSION_TTL_HOURS", "12")
 	t.Setenv("AUTH_REMEMBER_SESSION_TTL_HOURS", "480")
 	t.Setenv("AUTH_BCRYPT_COST", "14")
+	t.Setenv("GOOGLE_CLIENT_IDS", "web-client-id.apps.googleusercontent.com,mobile-client-id.apps.googleusercontent.com")
 	t.Setenv("R2_KEY_PREFIX", "yt-downloader/prod")
 
 	cfg := Load()
@@ -220,6 +236,9 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.AuthBcryptCost != 14 {
 		t.Fatalf("unexpected AUTH_BCRYPT_COST override: %d", cfg.AuthBcryptCost)
+	}
+	if cfg.GoogleClientIDs != "web-client-id.apps.googleusercontent.com,mobile-client-id.apps.googleusercontent.com" {
+		t.Fatalf("unexpected GOOGLE_CLIENT_IDS override: %q", cfg.GoogleClientIDs)
 	}
 	if cfg.R2KeyPrefix != "yt-downloader/prod" {
 		t.Fatalf("unexpected R2_KEY_PREFIX override: %s", cfg.R2KeyPrefix)

@@ -148,6 +148,15 @@ export const api = {
       }),
     }),
 
+  loginWithGoogle: (payload: { idToken: string; keepLoggedIn?: boolean }) =>
+    fetcher<AuthResponse>("/v1/auth/google", {
+      method: "POST",
+      body: JSON.stringify({
+        id_token: payload.idToken,
+        keep_logged_in: payload.keepLoggedIn ?? false,
+      }),
+    }),
+
   me: () => fetcher<AuthMeResponse>("/v1/auth/me"),
 
   logout: () =>

@@ -11,13 +11,17 @@ import (
 )
 
 var (
-	ErrEmailTaken          = errors.New("email already registered")
-	ErrUserNotFound        = errors.New("user not found")
-	ErrSessionNotFound     = errors.New("session not found")
-	ErrSessionRevoked      = errors.New("session revoked")
-	ErrSessionExpired      = errors.New("session expired")
-	ErrInvalidCredentials  = errors.New("invalid email or password")
-	ErrInvalidSessionToken = errors.New("invalid session token")
+	ErrEmailTaken             = errors.New("email already registered")
+	ErrUserNotFound           = errors.New("user not found")
+	ErrSessionNotFound        = errors.New("session not found")
+	ErrSessionRevoked         = errors.New("session revoked")
+	ErrSessionExpired         = errors.New("session expired")
+	ErrInvalidCredentials     = errors.New("invalid email or password")
+	ErrInvalidSessionToken    = errors.New("invalid session token")
+	ErrGoogleAuthDisabled     = errors.New("google auth is disabled")
+	ErrGoogleTokenInvalid     = errors.New("google token is invalid")
+	ErrGoogleEmailUnverified  = errors.New("google email is not verified")
+	ErrGoogleIdentityConflict = errors.New("google account is linked to a different user")
 )
 
 type User struct {
@@ -42,15 +46,29 @@ type Session struct {
 	KeepLoggedIn bool
 }
 
+type GoogleIdentity struct {
+	UserID        string
+	GoogleSubject string
+	Email         string
+	FullName      string
+	PictureURL    string
+	EmailVerified bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 type backend interface {
 	CreateUser(ctx context.Context, user User) error
 	CreateUserAndSession(ctx context.Context, user User, session Session) error
+	CreateUserSessionAndGoogleIdentity(ctx context.Context, user User, session Session, identity GoogleIdentity) error
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, userID string) (User, error)
+	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	TouchSession(ctx context.Context, tokenHash string, touchedAt time.Time) error
 	RevokeSessionByTokenHash(ctx context.Context, tokenHash string, revokedAt time.Time) error
+	UpsertGoogleIdentity(ctx context.Context, identity GoogleIdentity) error
 	Close() error
 }
 
@@ -93,6 +111,17 @@ func (s *Store) CreateUserAndSession(ctx context.Context, user User, session Ses
 	return s.backend.CreateUserAndSession(ctx, user, session)
 }
 
+func (s *Store) CreateUserSessionAndGoogleIdentity(ctx context.Context, user User, session Session, identity GoogleIdentity) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	identity.GoogleSubject = strings.TrimSpace(identity.GoogleSubject)
+	identity.Email = strings.TrimSpace(strings.ToLower(identity.Email))
+	identity.FullName = strings.TrimSpace(identity.FullName)
+	identity.PictureURL = strings.TrimSpace(identity.PictureURL)
+	return s.backend.CreateUserSessionAndGoogleIdentity(ctx, user, session, identity)
+}
+
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	if s == nil || s.backend == nil {
 		return User{}, errors.New("auth store is not initialized")
@@ -105,6 +134,13 @@ func (s *Store) GetUserByID(ctx context.Context, userID string) (User, error) {
 		return User{}, errors.New("auth store is not initialized")
 	}
 	return s.backend.GetUserByID(ctx, strings.TrimSpace(userID))
+}
+
+func (s *Store) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+	return s.backend.GetUserByGoogleSubject(ctx, strings.TrimSpace(googleSubject))
 }
 
 func (s *Store) CreateSession(ctx context.Context, session Session) error {
@@ -133,4 +169,15 @@ func (s *Store) RevokeSessionByTokenHash(ctx context.Context, tokenHash string, 
 		return errors.New("auth store is not initialized")
 	}
 	return s.backend.RevokeSessionByTokenHash(ctx, strings.TrimSpace(strings.ToLower(tokenHash)), revokedAt)
+}
+
+func (s *Store) UpsertGoogleIdentity(ctx context.Context, identity GoogleIdentity) error {
+	if s == nil || s.backend == nil {
+		return errors.New("auth store is not initialized")
+	}
+	identity.GoogleSubject = strings.TrimSpace(identity.GoogleSubject)
+	identity.Email = strings.TrimSpace(strings.ToLower(identity.Email))
+	identity.FullName = strings.TrimSpace(identity.FullName)
+	identity.PictureURL = strings.TrimSpace(identity.PictureURL)
+	return s.backend.UpsertGoogleIdentity(ctx, identity)
 }
