@@ -5,18 +5,25 @@ import Link from "next/link";
 import { TrayArrowDown, List } from "@phosphor-icons/react";
 import LoginModal from "./LoginModal";
 import SignupModal from "./SignupModal";
-import { api, APIError, type AuthUser } from "@/lib/api";
+import { api, APIError } from "@/lib/api";
 import {
   clearAuthSessionSnapshot,
-  readAuthSessionSnapshot,
 } from "@/lib/auth-session";
+import { useAuthStore } from "@/store";
 
 export default function Navbar() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
-  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const {
+    currentUser,
+    isAuthChecking,
+    isLoginModalOpen,
+    isSignupModalOpen,
+    setCurrentUser,
+    setIsAuthChecking,
+    setLoginModalOpen,
+    setSignupModalOpen,
+    logout,
+  } = useAuthStore();
 
   const userInitial = useMemo(() => {
     if (!currentUser?.full_name) {
@@ -37,14 +44,9 @@ export default function Navbar() {
     } finally {
       setIsAuthChecking(false);
     }
-  }, []);
+  }, [setCurrentUser, setIsAuthChecking]);
 
   useEffect(() => {
-    const snapshot = readAuthSessionSnapshot();
-    if (snapshot?.user) {
-      setCurrentUser(snapshot.user);
-    }
-
     void refreshAuthState();
 
     const handleAuthChange = () => {
@@ -61,11 +63,9 @@ export default function Navbar() {
     try {
       await api.logout();
     } catch {
-      // noop: logout must be idempotent from user perspective.
+      // noop
     }
-
-    clearAuthSessionSnapshot();
-    setCurrentUser(null);
+    logout();
     setIsDrawerOpen(false);
   };
 
@@ -125,14 +125,14 @@ export default function Navbar() {
           ) : (
             <>
               <button
-                onClick={() => setIsLoginModalOpen(true)}
+                onClick={() => setLoginModalOpen(true)}
                 className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary/10 text-primary text-sm font-bold hover:bg-primary/20 transition-all"
                 disabled={isAuthChecking}
               >
                 Login
               </button>
               <button
-                onClick={() => setIsSignupModalOpen(true)}
+                onClick={() => setSignupModalOpen(true)}
                 className="flex min-w-[84px] cursor-pointer items-center justify-center rounded-lg h-10 px-5 bg-primary text-white text-sm font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all disabled:opacity-60"
                 disabled={isAuthChecking}
               >
@@ -230,26 +230,26 @@ export default function Navbar() {
                   </>
                 ) : (
                   <>
-                    <button
-                      onClick={() => {
-                        setIsDrawerOpen(false);
-                        setIsLoginModalOpen(true);
-                      }}
-                      className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all disabled:opacity-60"
-                      disabled={isAuthChecking}
-                    >
-                      Login
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsDrawerOpen(false);
-                        setIsSignupModalOpen(true);
-                      }}
-                      className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all disabled:opacity-60"
-                      disabled={isAuthChecking}
-                    >
-                      Sign Up
-                    </button>
+                <button
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    setLoginModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary/10 text-primary text-base font-bold hover:bg-primary/20 transition-all disabled:opacity-60"
+                  disabled={isAuthChecking}
+                >
+                  Login
+                </button>
+                <button
+                  onClick={() => {
+                    setIsDrawerOpen(false);
+                    setSignupModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center rounded-lg h-11 bg-primary text-white text-base font-bold shadow-lg shadow-primary/20 hover:brightness-110 transition-all disabled:opacity-60"
+                  disabled={isAuthChecking}
+                >
+                  Sign Up
+                </button>
                   </>
                 )}
               </div>
@@ -261,20 +261,20 @@ export default function Navbar() {
       {/* Login Modal */}
       <LoginModal
         isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
+        onClose={() => setLoginModalOpen(false)}
         onSwitchToSignup={() => {
-          setIsLoginModalOpen(false);
-          setIsSignupModalOpen(true);
+          setLoginModalOpen(false);
+          setSignupModalOpen(true);
         }}
       />
 
       {/* Signup Modal */}
       <SignupModal
         isOpen={isSignupModalOpen}
-        onClose={() => setIsSignupModalOpen(false)}
+        onClose={() => setSignupModalOpen(false)}
         onSwitchToLogin={() => {
-          setIsSignupModalOpen(false);
-          setIsLoginModalOpen(true);
+          setSignupModalOpen(false);
+          setLoginModalOpen(true);
         }}
       />
     </>

@@ -1,19 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/store";
+import { api } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import SettingsProfile from "@/components/settings/SettingsProfile";
 import SettingsPreferences from "@/components/settings/SettingsPreferences";
 import SettingsNotifications from "@/components/settings/SettingsNotifications";
 import {
-  SAMPLE_USER,
   DEFAULT_SETTINGS,
   type SettingsFormData,
 } from "@/data/settings-data";
 
 export default function SettingsPage() {
+  const { currentUser, logout, isAuthChecking } = useAuthStore();
+  const router = useRouter();
+
   const [formData, setFormData] = useState<SettingsFormData>(DEFAULT_SETTINGS);
+
+  useEffect(() => {
+    if (currentUser) {
+      setFormData((prev) => ({
+        ...prev,
+        fullName: currentUser.full_name,
+        email: currentUser.email,
+      }));
+    } else if (!isAuthChecking) {
+      router.push("/");
+    }
+  }, [currentUser, isAuthChecking, router]);
 
   const handleFullNameChange = (value: string) => {
     setFormData((prev) => ({ ...prev, fullName: value }));
@@ -53,19 +70,43 @@ export default function SettingsPage() {
     setFormData(DEFAULT_SETTINGS);
   };
 
-  const handleLogout = () => {
-    console.log("Logout clicked");
-    // TODO: Implement logout logic
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // noop
+    }
+    logout();
+    router.push("/");
+  };
+
+  if (isAuthChecking) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return null; // Will redirect via useEffect
+  }
+
+  const userProfile = {
+    name: currentUser.full_name,
+    email: currentUser.email,
+    plan: "Free Plan",
+    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name)}&background=random`,
   };
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <SettingsSidebar user={SAMPLE_USER} onLogout={handleLogout} />
+      <SettingsSidebar user={userProfile} onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
         <SettingsHeader />
         <div className="max-w-4xl px-8 pb-12 space-y-8">
           <SettingsProfile
-            user={SAMPLE_USER}
+            user={userProfile}
             fullName={formData.fullName}
             email={formData.email}
             onFullNameChange={handleFullNameChange}

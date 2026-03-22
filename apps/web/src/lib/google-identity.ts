@@ -32,6 +32,19 @@ interface GoogleAccountsIDAPI {
   prompt: (
     momentListener?: (notification: GooglePromptMomentNotification) => void,
   ) => void;
+  renderButton: (
+    parent: HTMLElement,
+    options: {
+      type?: "standard" | "icon";
+      theme?: "outline" | "filled_blue" | "filled_black";
+      size?: "large" | "medium" | "small";
+      text?: "signin_with" | "signup_with" | "continue_with" | "signin";
+      shape?: "rectangular" | "pill" | "circle" | "square";
+      logo_alignment?: "left" | "center";
+      width?: string;
+      locale?: string;
+    },
+  ) => void;
   cancel?: () => void;
 }
 
@@ -93,16 +106,23 @@ function consumePendingRequestWithError(error: Error): void {
   current.reject(error);
 }
 
-function onGoogleCredential(response: GoogleCredentialResponse): void {
+async function onGoogleCredential(response: GoogleCredentialResponse): Promise<void> {
   const token = response?.credential?.trim();
   if (!token) {
-    consumePendingRequestWithError(
-      new Error("Google tidak mengembalikan credential yang valid."),
-    );
+    const error = new Error("Google tidak mengembalikan credential yang valid.");
+    consumePendingRequestWithError(error);
     return;
   }
 
-  consumePendingRequestWithToken(token);
+  // If there's a pending promise-based request, resolve it.
+  if (pendingTokenRequest) {
+    consumePendingRequestWithToken(token);
+    return;
+  }
+
+  // Otherwise, it might be from renderButton or a direct prompt.
+  // We'll dispatch a custom event so modals can listen for it.
+  window.dispatchEvent(new CustomEvent("quicksnap:google-token", { detail: token }));
 }
 
 function buildPromptErrorMessage(
@@ -279,5 +299,18 @@ export async function requestGoogleIDToken(
         normalizeErrorMessage(error, "Gagal memulai login Google."),
       );
     }
+  });
+}
+
+export async function renderGoogleButton(
+  parent: HTMLElement,
+  options: any = {},
+): Promise<void> {
+  await ensureReady();
+  window.google?.accounts.id.renderButton(parent, {
+    theme: "outline",
+    size: "large",
+    width: parent.offsetWidth ? `${parent.offsetWidth}px` : "100%",
+    ...options,
   });
 }

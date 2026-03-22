@@ -1,21 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   X,
   User,
   EnvelopeSimple,
   Lock,
   ArrowRight,
-  GoogleLogo,
 } from "@phosphor-icons/react";
 import { api, APIError } from "@/lib/api";
 import { persistAuthSession } from "@/lib/auth-session";
 import {
   hasGoogleClientID,
-  requestGoogleIDToken,
   warmupGoogleIdentity,
+  renderGoogleButton,
 } from "@/lib/google-identity";
+import { useAuthStore } from "@/store";
 
 function resolveSignupErrorMessage(error: APIError): string {
   switch (error.code) {
@@ -52,6 +52,9 @@ export default function SignupModal({
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const googleButtonRef = useRef<HTMLDivElement>(null);
+  const { setCurrentUser } = useAuthStore();
+
   const isGoogleConfigured = hasGoogleClientID();
 
   useEffect(() => {
@@ -59,10 +62,56 @@ export default function SignupModal({
       return;
     }
 
-    void warmupGoogleIdentity().catch(() => {
-      // Keep UI responsive; detailed error is shown during explicit login click.
-    });
-  }, [isOpen, isGoogleConfigured]);
+    const handleGoogleToken = async (e: any) => {
+      const idToken = e.detail;
+      if (!idToken) return;
+
+      setIsGoogleLoading(true);
+      setErrorMessage("");
+
+      try {
+        const auth = await api.loginWithGoogle({
+          idToken,
+          keepLoggedIn: true,
+        });
+        persistAuthSession(auth, true);
+        setCurrentUser(auth.user);
+        window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
+        handleClose();
+      } catch (error) {
+        if (error instanceof APIError) {
+          setErrorMessage(resolveSignupErrorMessage(error));
+        } else {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Sign up Google gagal.",
+          );
+        }
+      } finally {
+        setIsGoogleLoading(false);
+      }
+    };
+
+    window.addEventListener("quicksnap:google-token", handleGoogleToken);
+
+    const initGoogle = async () => {
+      try {
+        await warmupGoogleIdentity();
+        if (googleButtonRef.current) {
+          await renderGoogleButton(googleButtonRef.current, {
+            text: "signup_with",
+          });
+        }
+      } catch (err) {
+        console.error("Google init failed:", err);
+      }
+    };
+
+    void initGoogle();
+
+    return () => {
+      window.removeEventListener("quicksnap:google-token", handleGoogleToken);
+    };
+  }, [isOpen, isGoogleConfigured, setCurrentUser]);
 
   if (!isOpen) {
     return null;
@@ -100,6 +149,7 @@ export default function SignupModal({
         keepLoggedIn: true,
       });
       persistAuthSession(auth, true);
+      setCurrentUser(auth.user);
       window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
       handleClose();
     } catch (error) {
@@ -112,41 +162,6 @@ export default function SignupModal({
       }
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSignup = async () => {
-    if (isLoading || isGoogleLoading) {
-      return;
-    }
-
-    if (!isGoogleConfigured) {
-      setErrorMessage("Google login belum dikonfigurasi di frontend.");
-      return;
-    }
-
-    setErrorMessage("");
-    setIsGoogleLoading(true);
-
-    try {
-      const idToken = await requestGoogleIDToken();
-      const auth = await api.loginWithGoogle({
-        idToken,
-        keepLoggedIn: true,
-      });
-      persistAuthSession(auth, true);
-      window.dispatchEvent(new CustomEvent("quicksnap:auth-changed"));
-      handleClose();
-    } catch (error) {
-      if (error instanceof APIError) {
-        setErrorMessage(resolveSignupErrorMessage(error));
-      } else {
-        setErrorMessage(
-          error instanceof Error ? error.message : "Sign up Google gagal.",
-        );
-      }
-    } finally {
-      setIsGoogleLoading(false);
     }
   };
 
@@ -314,23 +329,7 @@ export default function SignupModal({
           </div>
 
           {/* Google Button */}
-          <button
-            className="w-full py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            type="button"
-            onClick={handleGoogleSignup}
-            disabled={!isGoogleConfigured || isLoading || isGoogleLoading}
-          >
-            {isGoogleLoading ? (
-              <span className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <div className="bg-white rounded-full p-0.5">
-                  <GoogleLogo size={20} weight="fill" />
-                </div>
-                Sign up with Google
-              </>
-            )}
-          </button>
+          <div ref={googleButtonRef} className="w-full min-h-[44px] flex justify-center" />
 
           {!isGoogleConfigured ? (
             <p className="-mt-2 text-center text-xs text-slate-500 dark:text-slate-400">
