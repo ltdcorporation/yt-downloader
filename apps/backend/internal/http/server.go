@@ -23,6 +23,7 @@ import (
 
 	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
 	"yt-downloader/backend/internal/queue"
@@ -61,18 +62,19 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg         config.Config
-	logger      *log.Logger
-	resolver    youtubeResolver
-	xResolver   xMediaResolver
-	igResolver  igMediaResolver
-	ttResolver  ttMediaResolver
-	queue       taskQueue
-	jobStore    jobStore
-	authStore   *auth.Store
-	authService *auth.Service
-	origins     map[string]struct{}
-	limiter     *ipRateLimiter
+	cfg          config.Config
+	logger       *log.Logger
+	resolver     youtubeResolver
+	xResolver    xMediaResolver
+	igResolver   igMediaResolver
+	ttResolver   ttMediaResolver
+	queue        taskQueue
+	jobStore     jobStore
+	authStore    *auth.Store
+	historyStore *history.Store
+	authService  *auth.Service
+	origins      map[string]struct{}
+	limiter      *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
@@ -145,6 +147,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 
 	authStore := auth.NewStore(cfg, logger)
+	historyStore := history.NewStore(cfg, logger)
 	googleVerifier := auth.NewGoogleTokenVerifier(auth.GoogleTokenVerifierOptions{
 		ClientIDs: splitCommaSeparated(cfg.GoogleClientIDs),
 	})
@@ -156,18 +159,19 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	})
 
 	return &Server{
-		cfg:         cfg,
-		logger:      logger,
-		resolver:    resolver,
-		xResolver:   xResolver,
-		igResolver:  igResolver,
-		ttResolver:  ttResolver,
-		queue:       queue,
-		jobStore:    store,
-		authStore:   authStore,
-		authService: authService,
-		origins:     parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:     newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:          cfg,
+		logger:       logger,
+		resolver:     resolver,
+		xResolver:    xResolver,
+		igResolver:   igResolver,
+		ttResolver:   ttResolver,
+		queue:        queue,
+		jobStore:     store,
+		authStore:    authStore,
+		historyStore: historyStore,
+		authService:  authService,
+		origins:      parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:      newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 }
 
@@ -185,6 +189,11 @@ func (s *Server) Close() {
 	if s.authStore != nil {
 		if err := s.authStore.Close(); err != nil {
 			s.logger.Printf("warning: close auth store: %v", err)
+		}
+	}
+	if s.historyStore != nil {
+		if err := s.historyStore.Close(); err != nil {
+			s.logger.Printf("warning: close history store: %v", err)
 		}
 	}
 }
