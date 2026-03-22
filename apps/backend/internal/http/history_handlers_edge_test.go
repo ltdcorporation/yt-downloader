@@ -100,6 +100,11 @@ func TestHistoryHelpers_CodecAndValidation(t *testing.T) {
 		if _, err := decodeHistoryRedownloadRequest(req); err == nil {
 			t.Fatalf("expected decode error for multiple JSON objects")
 		}
+
+		req = httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"request_kind":"mp3"}x`))
+		if _, err := decodeHistoryRedownloadRequest(req); err == nil {
+			t.Fatalf("expected decode error for trailing invalid JSON token")
+		}
 	})
 
 	t.Run("resolve redownload kind", func(t *testing.T) {
@@ -227,6 +232,20 @@ func TestHandleHistory_ServiceAndValidationErrors(t *testing.T) {
 		}
 		if page["limit"] != float64(history.MaxListLimit) {
 			t.Fatalf("expected clamped limit %d, got %#v", history.MaxListLimit, page["limit"])
+		}
+	})
+
+	t.Run("history list accepts valid platform and status filters", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/history?platform=youtube&status=done&limit=1", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if _, ok := payload["items"].([]any); !ok {
+			t.Fatalf("expected items array, got %#v", payload["items"])
 		}
 	})
 
@@ -450,6 +469,9 @@ func TestRequireSessionIdentityAndOptionalIdentityBranches(t *testing.T) {
 		if identity := server.optionalSessionIdentity(reqNoToken); identity != nil {
 			t.Fatalf("expected nil identity without token")
 		}
+		if identity := (*Server)(nil).optionalSessionIdentity(reqNoToken); identity != nil {
+			t.Fatalf("expected nil identity on nil server")
+		}
 
 		reqValid := httptest.NewRequest(http.MethodGet, "/v1/history", nil)
 		reqValid.Header.Set("Authorization", "Bearer "+token)
@@ -637,6 +659,27 @@ func TestHandleHistoryStatsAndDeleteServiceUnavailable(t *testing.T) {
 	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
 	token, _ := registerUserAndGetToken(t, server)
 
+	// auth required branches for stats/delete/redownload
+	unauthCases := []struct {
+		name string
+		url  string
+		verb string
+	}{
+		{name: "stats unauthorized", verb: http.MethodGet, url: "/v1/history/stats"},
+		{name: "delete unauthorized", verb: http.MethodDelete, url: "/v1/history/his_missing"},
+		{name: "redownload unauthorized", verb: http.MethodPost, url: "/v1/history/his_missing/redownload"},
+	}
+	for _, tc := range unauthCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.verb, tc.url, nil)
+			rec := httptest.NewRecorder()
+			server.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+
 	server.historyStore = nil
 
 	statsReq := httptest.NewRequest(http.MethodGet, "/v1/history/stats", nil)
@@ -653,6 +696,24 @@ func TestHandleHistoryStatsAndDeleteServiceUnavailable(t *testing.T) {
 	server.Handler().ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 for delete unavailable, got %d", deleteRec.Code)
+	}
+
+	redownloadReq := httptest.NewRequest(http.MethodPost, "/v1/history/his_missing/redownload", nil)
+	redownloadReq.Header.Set("Authorization", "Bearer "+token)
+	redownloadRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(redownloadRec, redownloadReq)
+	if redownloadRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for redownload unavailable, got %d", redownloadRec.Code)
+	}
+
+	// Internal get-item error branch with non-nil but uninitialized store
+	server.historyStore = &history.Store{}
+	internalReq := httptest.NewRequest(http.MethodPost, "/v1/history/his_internal/redownload", nil)
+	internalReq.Header.Set("Authorization", "Bearer "+token)
+	internalRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(internalRec, internalReq)
+	if internalRec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for internal redownload error, got %d body=%s", internalRec.Code, internalRec.Body.String())
 	}
 }
 

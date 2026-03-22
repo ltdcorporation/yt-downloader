@@ -3,8 +3,12 @@ package history
 import (
 	"context"
 	"errors"
+	"io"
+	"log"
 	"testing"
 	"time"
+
+	"yt-downloader/backend/internal/config"
 )
 
 func TestStoreValidationAndGuardClauses(t *testing.T) {
@@ -195,5 +199,98 @@ func TestStorePassThroughForStatsAndLatestErrors(t *testing.T) {
 	}
 	if _, err := store.GetLatestAttemptByItem(context.Background(), "user_1", "his_1"); !errors.Is(err, expectedErr) {
 		t.Fatalf("expected latest attempt passthrough error, got %v", err)
+	}
+}
+
+func TestStoreValidationBranchCoverage(t *testing.T) {
+	store := &Store{backend: &fakeBackend{}}
+
+	if _, err := store.UpsertItem(context.Background(), Item{UserID: "user_1", Platform: PlatformYouTube, SourceURL: "https://youtube.com/watch?v=a"}); err == nil {
+		t.Fatalf("expected upsert validation error for missing item id")
+	}
+	if _, err := store.UpsertItem(context.Background(), Item{ID: "his_1", Platform: PlatformYouTube, SourceURL: "https://youtube.com/watch?v=a"}); err == nil {
+		t.Fatalf("expected upsert validation error for missing user id")
+	}
+	if _, err := store.UpsertItem(context.Background(), Item{ID: "his_1", UserID: "user_1", Platform: PlatformYouTube}); err == nil {
+		t.Fatalf("expected upsert validation error for missing source url")
+	}
+
+	invalidCreateCases := []Attempt{
+		{HistoryItemID: "his_1", UserID: "user_1", RequestKind: RequestKindMP3, Status: StatusQueued},
+		{ID: "hat_1", UserID: "user_1", RequestKind: RequestKindMP3, Status: StatusQueued},
+		{ID: "hat_1", HistoryItemID: "his_1", RequestKind: RequestKindMP3, Status: StatusQueued},
+		{ID: "hat_1", HistoryItemID: "his_1", UserID: "user_1", RequestKind: RequestKind("archive"), Status: StatusQueued},
+		{ID: "hat_1", HistoryItemID: "his_1", UserID: "user_1", RequestKind: RequestKindMP3, Status: AttemptStatus("invalid")},
+	}
+	for index, attempt := range invalidCreateCases {
+		if _, err := store.CreateAttempt(context.Background(), attempt); err == nil {
+			t.Fatalf("expected create attempt validation error for case %d", index)
+		}
+	}
+}
+
+func TestNewStoreWithLoggerBranches(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+
+	memoryStore := NewStore(config.Config{}, logger)
+	if memoryStore == nil {
+		t.Fatalf("expected memory store instance")
+	}
+	if _, ok := memoryStore.backend.(*memoryBackend); !ok {
+		t.Fatalf("expected memory backend with empty postgres dsn")
+	}
+	_ = memoryStore.Close()
+
+	postgresStore := NewStore(config.Config{PostgresDSN: "postgres://u:p@127.0.0.1:5435/ytd?sslmode=disable"}, logger)
+	if postgresStore == nil {
+		t.Fatalf("expected postgres store instance")
+	}
+	if _, ok := postgresStore.backend.(*postgresBackend); !ok {
+		t.Fatalf("expected postgres backend with postgres dsn")
+	}
+	_ = postgresStore.Close()
+}
+
+func TestStoreListAndUpdateMutationBranches(t *testing.T) {
+	backend := &fakeBackend{}
+	store := &Store{backend: backend}
+
+	backend.listItemsFn = func(_ context.Context, userID string, filter ListFilter) (ListPage, error) {
+		if filter.Limit != MaxListLimit {
+			t.Fatalf("expected limit clamped to MaxListLimit, got %d", filter.Limit)
+		}
+		if filter.Cursor == nil {
+			t.Fatalf("expected cursor to be present")
+		}
+		if filter.Cursor.SortAt.Location() != time.UTC {
+			t.Fatalf("expected cursor sortAt in UTC, got %v", filter.Cursor.SortAt.Location())
+		}
+		return ListPage{}, nil
+	}
+
+	localTime := time.Date(2026, 3, 22, 18, 0, 0, 0, time.FixedZone("UTC+7", 7*3600))
+	if _, err := store.ListItems(context.Background(), "user_1", ListFilter{Limit: MaxListLimit + 100, Cursor: &ListCursor{SortAt: localTime, ItemID: "his_1"}}); err != nil {
+		t.Fatalf("unexpected list items error: %v", err)
+	}
+
+	baseAttempt := Attempt{ID: "hat_1", UserID: "user_1", HistoryItemID: "his_1", RequestKind: RequestKindMP3, Status: StatusQueued}
+	backend.getAttemptByIDFn = func(context.Context, string, string) (Attempt, error) { return baseAttempt, nil }
+
+	if _, err := store.UpdateAttempt(context.Background(), "user_1", "hat_1", func(a *Attempt) {
+		a.RequestKind = RequestKind("archive")
+	}); err == nil {
+		t.Fatalf("expected update attempt error for invalid request kind mutation")
+	}
+
+	if _, err := store.UpdateAttempt(context.Background(), "user_1", "hat_1", func(a *Attempt) {
+		a.RequestKind = RequestKindMP3
+		a.Status = AttemptStatus("invalid")
+	}); err == nil {
+		t.Fatalf("expected update attempt error for invalid status mutation")
+	}
+
+	backend.updateAttemptFn = func(context.Context, Attempt) error { return errors.New("update failed") }
+	if _, err := store.UpdateAttempt(context.Background(), "user_1", "hat_1", nil); err == nil {
+		t.Fatalf("expected update attempt passthrough error")
 	}
 }

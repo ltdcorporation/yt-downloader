@@ -17,6 +17,7 @@ func TestPostgresBackendIntegration_ItemLifecycle(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
+	lastSuccess := now.Add(-time.Minute)
 	item, err := backend.UpsertItem(ctx, Item{
 		ID:            "his_pg_1",
 		UserID:        "user_1",
@@ -25,6 +26,7 @@ func TestPostgresBackendIntegration_ItemLifecycle(t *testing.T) {
 		SourceURLHash: "hash_abc123",
 		Title:         "Video One",
 		ThumbnailURL:  "https://img.example.com/1.jpg",
+		LastSuccessAt: &lastSuccess,
 		AttemptCount:  1,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -99,6 +101,8 @@ func TestPostgresBackendIntegration_AttemptLifecycle(t *testing.T) {
 	}
 
 	size := int64(123456)
+	createExpiresAt := now.Add(30 * time.Minute)
+	createCompletedAt := now.Add(31 * time.Minute)
 	attempt := Attempt{
 		ID:            "hat_pg_1",
 		HistoryItemID: item.ID,
@@ -110,6 +114,8 @@ func TestPostgresBackendIntegration_AttemptLifecycle(t *testing.T) {
 		SizeBytes:     &size,
 		JobID:         "job_pg_1",
 		OutputKey:     "yt-downloader/prod/mp3/job_pg_1.mp3",
+		ExpiresAt:     &createExpiresAt,
+		CompletedAt:   &createCompletedAt,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -178,6 +184,33 @@ func TestPostgresBackendIntegration_AttemptLifecycle(t *testing.T) {
 	duplicate.ID = "hat_pg_2"
 	if err := backend.CreateAttempt(ctx, duplicate); !errors.Is(err, ErrConflict) {
 		t.Fatalf("expected ErrConflict for duplicate job_id, got %v", err)
+	}
+
+	if err := backend.CreateAttempt(ctx, Attempt{
+		ID:            "hat_pg_3",
+		HistoryItemID: item.ID,
+		UserID:        "user_1",
+		RequestKind:   RequestKindMP3,
+		Status:        StatusQueued,
+		JobID:         "job_pg_3",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		t.Fatalf("unexpected create second distinct attempt error: %v", err)
+	}
+
+	updateConflict := Attempt{
+		ID:            "hat_pg_3",
+		HistoryItemID: item.ID,
+		UserID:        "user_1",
+		RequestKind:   RequestKindMP3,
+		Status:        StatusQueued,
+		JobID:         "job_pg_1", // already owned by hat_pg_1
+		CreatedAt:     now,
+		UpdatedAt:     now.Add(2 * time.Minute),
+	}
+	if err := backend.UpdateAttempt(ctx, updateConflict); !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict on update duplicate job_id, got %v", err)
 	}
 }
 
