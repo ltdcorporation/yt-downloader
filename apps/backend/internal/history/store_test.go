@@ -12,14 +12,17 @@ import (
 type fakeBackend struct {
 	readyErr error
 
-	upsertItemFn      func(ctx context.Context, item Item) (Item, error)
-	getItemByIDFn     func(ctx context.Context, userID, itemID string) (Item, error)
-	softDeleteItemFn  func(ctx context.Context, userID, itemID string, deletedAt time.Time) error
-	markItemSuccessFn func(ctx context.Context, userID, itemID string, succeededAt time.Time) error
-	createAttemptFn   func(ctx context.Context, attempt Attempt) error
-	updateAttemptFn   func(ctx context.Context, attempt Attempt) error
-	getAttemptByIDFn  func(ctx context.Context, userID, attemptID string) (Attempt, error)
-	getByJobIDFn      func(ctx context.Context, jobID string) (Attempt, error)
+	upsertItemFn             func(ctx context.Context, item Item) (Item, error)
+	getItemByIDFn            func(ctx context.Context, userID, itemID string) (Item, error)
+	softDeleteItemFn         func(ctx context.Context, userID, itemID string, deletedAt time.Time) error
+	markItemSuccessFn        func(ctx context.Context, userID, itemID string, succeededAt time.Time) error
+	createAttemptFn          func(ctx context.Context, attempt Attempt) error
+	updateAttemptFn          func(ctx context.Context, attempt Attempt) error
+	getAttemptByIDFn         func(ctx context.Context, userID, attemptID string) (Attempt, error)
+	getByJobIDFn             func(ctx context.Context, jobID string) (Attempt, error)
+	getLatestAttemptByItemFn func(ctx context.Context, userID, itemID string) (Attempt, error)
+	listItemsFn              func(ctx context.Context, userID string, filter ListFilter) (ListPage, error)
+	getStatsFn               func(ctx context.Context, userID string) (Stats, error)
 
 	closeCalls int
 
@@ -95,6 +98,27 @@ func (f *fakeBackend) GetAttemptByJobID(ctx context.Context, jobID string) (Atte
 	return Attempt{}, ErrAttemptNotFound
 }
 
+func (f *fakeBackend) GetLatestAttemptByItem(ctx context.Context, userID, itemID string) (Attempt, error) {
+	if f.getLatestAttemptByItemFn != nil {
+		return f.getLatestAttemptByItemFn(ctx, userID, itemID)
+	}
+	return Attempt{}, ErrAttemptNotFound
+}
+
+func (f *fakeBackend) ListItems(ctx context.Context, userID string, filter ListFilter) (ListPage, error) {
+	if f.listItemsFn != nil {
+		return f.listItemsFn(ctx, userID, filter)
+	}
+	return ListPage{}, nil
+}
+
+func (f *fakeBackend) GetStats(ctx context.Context, userID string) (Stats, error) {
+	if f.getStatsFn != nil {
+		return f.getStatsFn(ctx, userID)
+	}
+	return Stats{}, nil
+}
+
 func TestStoreUpsertItem_NormalizesAndHashesURL(t *testing.T) {
 	backend := &fakeBackend{}
 	store := &Store{backend: backend}
@@ -161,6 +185,92 @@ func TestStoreMarkItemSuccess(t *testing.T) {
 	}
 	if gotAt.IsZero() {
 		t.Fatalf("expected succeededAt to be set")
+	}
+}
+
+func TestStoreListItems_ValidatesAndPassesThrough(t *testing.T) {
+	backend := &fakeBackend{}
+	store := &Store{backend: backend}
+
+	called := false
+	backend.listItemsFn = func(_ context.Context, userID string, filter ListFilter) (ListPage, error) {
+		called = true
+		if userID != "user_1" {
+			t.Fatalf("unexpected user_id %q", userID)
+		}
+		if filter.Limit != 10 {
+			t.Fatalf("unexpected limit %d", filter.Limit)
+		}
+		if filter.Platform != PlatformYouTube {
+			t.Fatalf("unexpected platform %q", filter.Platform)
+		}
+		if filter.Query != "abc" {
+			t.Fatalf("unexpected query %q", filter.Query)
+		}
+		if filter.Status != StatusDone {
+			t.Fatalf("unexpected status %q", filter.Status)
+		}
+		return ListPage{Entries: []ListEntry{{Item: Item{ID: "his_1"}}}}, nil
+	}
+
+	page, err := store.ListItems(context.Background(), " user_1 ", ListFilter{
+		Limit:    10,
+		Platform: PlatformYouTube,
+		Query:    "  abc  ",
+		Status:   StatusDone,
+	})
+	if err != nil {
+		t.Fatalf("unexpected list error: %v", err)
+	}
+	if !called {
+		t.Fatalf("expected backend list to be called")
+	}
+	if len(page.Entries) != 1 || page.Entries[0].Item.ID != "his_1" {
+		t.Fatalf("unexpected page result: %+v", page)
+	}
+
+	if _, err := store.ListItems(context.Background(), "user_1", ListFilter{Platform: Platform("unknown")}); err == nil {
+		t.Fatalf("expected validation error for invalid platform")
+	}
+	if _, err := store.ListItems(context.Background(), "user_1", ListFilter{Status: AttemptStatus("unknown")}); err == nil {
+		t.Fatalf("expected validation error for invalid status")
+	}
+	if _, err := store.ListItems(context.Background(), "user_1", ListFilter{Cursor: &ListCursor{SortAt: time.Now().UTC()}}); err == nil {
+		t.Fatalf("expected validation error for invalid cursor")
+	}
+}
+
+func TestStoreGetStatsAndLatestAttempt(t *testing.T) {
+	backend := &fakeBackend{}
+	store := &Store{backend: backend}
+
+	backend.getStatsFn = func(_ context.Context, userID string) (Stats, error) {
+		if userID != "user_1" {
+			t.Fatalf("unexpected user id %q", userID)
+		}
+		return Stats{TotalItems: 2}, nil
+	}
+	backend.getLatestAttemptByItemFn = func(_ context.Context, userID, itemID string) (Attempt, error) {
+		if userID != "user_1" || itemID != "his_1" {
+			t.Fatalf("unexpected lookup user=%q item=%q", userID, itemID)
+		}
+		return Attempt{ID: "hat_1"}, nil
+	}
+
+	stats, err := store.GetStats(context.Background(), " user_1 ")
+	if err != nil {
+		t.Fatalf("unexpected stats error: %v", err)
+	}
+	if stats.TotalItems != 2 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+
+	attempt, err := store.GetLatestAttemptByItem(context.Background(), " user_1 ", " his_1 ")
+	if err != nil {
+		t.Fatalf("unexpected latest attempt error: %v", err)
+	}
+	if attempt.ID != "hat_1" {
+		t.Fatalf("unexpected attempt: %+v", attempt)
 	}
 }
 

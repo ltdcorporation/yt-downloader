@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"golang.org/x/time/rate"
 
@@ -26,7 +25,6 @@ import (
 	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
-	"yt-downloader/backend/internal/queue"
 	"yt-downloader/backend/internal/ttresolver"
 	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
@@ -212,6 +210,10 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/auth/google", s.handleAuthGoogleLogin)
 	r.Get("/v1/auth/me", s.handleAuthMe)
 	r.Post("/v1/auth/logout", s.handleAuthLogout)
+	r.Get("/v1/history", s.handleHistoryList)
+	r.Get("/v1/history/stats", s.handleHistoryStats)
+	r.Post("/v1/history/{id}/redownload", s.handleHistoryRedownload)
+	r.Delete("/v1/history/{id}", s.handleHistoryDelete)
 	r.Post("/v1/youtube/resolve", s.handleResolveYouTube)
 	r.Post("/v1/x/resolve", s.handleResolveX)
 	r.Post("/v1/instagram/resolve", s.handleResolveInstagram)
@@ -404,88 +406,23 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jobID := "job_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	outputKey := buildMP3OutputKey(s.cfg.R2KeyPrefix, jobID)
-	now := time.Now().UTC()
-	bitrateKbps := s.cfg.MP3Bitrate
-	if bitrateKbps <= 0 {
-		bitrateKbps = 128
-	}
-
-	record := jobs.Record{
-		ID:         jobID,
-		Status:     jobs.StatusQueued,
-		InputURL:   sourceURL,
-		OutputKind: "mp3",
-		OutputKey:  outputKey,
-		Title:      title,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	if err := s.jobStore.Put(r.Context(), record); err != nil {
-		s.logger.Printf("failed to persist queued job id=%s err=%v", jobID, err)
-		writeError(w, http.StatusInternalServerError, "failed to create job")
-		return
-	}
-
 	identity := s.optionalSessionIdentity(r)
-	var historyAttempt *history.Attempt
+	userID := ""
 	if identity != nil {
-		createdAttempt, ok := s.createHistoryAttempt(r.Context(), historyAttemptCreateParams{
-			UserID:       identity.User.ID,
-			Platform:     platform,
-			SourceURL:    sourceURL,
-			Title:        title,
-			ThumbnailURL: thumbnail,
-			RequestKind:  history.RequestKindMP3,
-			Status:       history.StatusQueued,
-			QualityLabel: fmt.Sprintf("%dkbps", bitrateKbps),
-			JobID:        jobID,
-			OutputKey:    outputKey,
-		})
-		if ok {
-			historyAttempt = createdAttempt
-		}
+		userID = identity.User.ID
 	}
 
-	payload := queue.ConvertMP3Payload{
-		JobID:       jobID,
-		SourceURL:   sourceURL,
-		Headers:     headers,
-		UserAgent:   userAgent,
-		OutputKey:   outputKey,
-		BitrateKbps: bitrateKbps,
-	}
-	taskBytes, err := json.Marshal(payload)
+	jobID, err := s.enqueueMP3Job(r.Context(), enqueueMP3Params{
+		SourceURL: sourceURL,
+		Headers:   headers,
+		UserAgent: userAgent,
+		Platform:  platform,
+		Title:     title,
+		Thumbnail: thumbnail,
+		UserID:    userID,
+	})
 	if err != nil {
-		_, _ = s.jobStore.Update(r.Context(), jobID, func(item *jobs.Record) {
-			item.Status = jobs.StatusFailed
-			item.Error = "failed to encode job payload"
-		})
-		if historyAttempt != nil {
-			s.markHistoryAttemptFailed(historyAttempt, "queue_payload_encode_failed", err)
-		}
-		writeError(w, http.StatusInternalServerError, "failed to queue job")
-		return
-	}
-
-	task := asynq.NewTask(queue.TaskConvertMP3, taskBytes)
-	_, err = s.queue.Enqueue(
-		task,
-		asynq.TaskID(jobID),
-		asynq.Queue("mp3"),
-		asynq.Timeout(20*time.Minute),
-		asynq.MaxRetry(2),
-	)
-	if err != nil {
-		_, _ = s.jobStore.Update(r.Context(), jobID, func(item *jobs.Record) {
-			item.Status = jobs.StatusFailed
-			item.Error = "failed to enqueue job"
-		})
-		if historyAttempt != nil {
-			s.markHistoryAttemptFailed(historyAttempt, "queue_enqueue_failed", err)
-		}
-		s.logger.Printf("failed to enqueue mp3 job id=%s err=%v", jobID, err)
+		s.logger.Printf("failed to create mp3 job source=%s err=%v", sourceURL, err)
 		writeError(w, http.StatusInternalServerError, "failed to queue job")
 		return
 	}

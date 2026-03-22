@@ -355,6 +355,174 @@ func (p *postgresBackend) GetAttemptByJobID(ctx context.Context, jobID string) (
 	return attempt, nil
 }
 
+func (p *postgresBackend) GetLatestAttemptByItem(ctx context.Context, userID, itemID string) (Attempt, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return Attempt{}, err
+	}
+
+	row := p.db.QueryRowContext(ctx, `
+		SELECT
+			id, history_item_id, user_id,
+			request_kind, status,
+			format_id, quality_label, size_bytes,
+			job_id, output_key, download_url, expires_at,
+			error_code, error_text,
+			created_at, updated_at, completed_at
+		FROM history_attempts
+		WHERE user_id = $1 AND history_item_id = $2
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, userID, itemID)
+
+	attempt, err := scanAttempt(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Attempt{}, ErrAttemptNotFound
+	}
+	if err != nil {
+		return Attempt{}, fmt.Errorf("read latest history attempt: %w", err)
+	}
+	return attempt, nil
+}
+
+func (p *postgresBackend) ListItems(ctx context.Context, userID string, filter ListFilter) (ListPage, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return ListPage{}, err
+	}
+
+	whereClauses := []string{
+		"hi.user_id = $1",
+		"hi.deleted_at IS NULL",
+	}
+	args := []any{userID}
+	argIndex := 2
+
+	if filter.Platform != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("hi.platform = $%d", argIndex))
+		args = append(args, filter.Platform)
+		argIndex++
+	}
+
+	if strings.TrimSpace(filter.Query) != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("(hi.title ILIKE $%d OR hi.source_url ILIKE $%d)", argIndex, argIndex))
+		args = append(args, "%"+strings.TrimSpace(filter.Query)+"%")
+		argIndex++
+	}
+
+	if filter.Status != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("la.status = $%d", argIndex))
+		args = append(args, filter.Status)
+		argIndex++
+	}
+
+	if filter.Cursor != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("(COALESCE(hi.last_attempt_at, hi.created_at) < $%d OR (COALESCE(hi.last_attempt_at, hi.created_at) = $%d AND hi.id < $%d))", argIndex, argIndex, argIndex+1))
+		args = append(args, filter.Cursor.SortAt.UTC(), filter.Cursor.ItemID)
+		argIndex += 2
+	}
+
+	limitPlusOne := filter.Limit + 1
+	args = append(args, limitPlusOne)
+	limitArg := argIndex
+
+	query := fmt.Sprintf(`
+		SELECT
+			hi.id, hi.user_id, hi.platform, hi.source_url, hi.source_url_hash,
+			hi.title, hi.thumbnail_url,
+			hi.last_attempt_at, hi.last_success_at, hi.attempt_count,
+			hi.deleted_at, hi.created_at, hi.updated_at,
+			la.id, la.history_item_id, la.user_id,
+			la.request_kind, la.status,
+			la.format_id, la.quality_label, la.size_bytes,
+			la.job_id, la.output_key, la.download_url, la.expires_at,
+			la.error_code, la.error_text,
+			la.created_at, la.updated_at, la.completed_at
+		FROM history_items hi
+		LEFT JOIN LATERAL (
+			SELECT
+				ha.id, ha.history_item_id, ha.user_id,
+				ha.request_kind, ha.status,
+				ha.format_id, ha.quality_label, ha.size_bytes,
+				ha.job_id, ha.output_key, ha.download_url, ha.expires_at,
+				ha.error_code, ha.error_text,
+				ha.created_at, ha.updated_at, ha.completed_at
+			FROM history_attempts ha
+			WHERE ha.history_item_id = hi.id AND ha.user_id = hi.user_id
+			ORDER BY ha.created_at DESC, ha.id DESC
+			LIMIT 1
+		) la ON true
+		WHERE %s
+		ORDER BY COALESCE(hi.last_attempt_at, hi.created_at) DESC, hi.id DESC
+		LIMIT $%d
+	`, strings.Join(whereClauses, " AND "), limitArg)
+
+	rows, err := p.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return ListPage{}, fmt.Errorf("list history items: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]ListEntry, 0, filter.Limit+1)
+	for rows.Next() {
+		entry, err := scanListEntry(rows)
+		if err != nil {
+			return ListPage{}, fmt.Errorf("scan history list entry: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return ListPage{}, fmt.Errorf("iterate history list entries: %w", err)
+	}
+
+	page := ListPage{Entries: entries}
+	if len(entries) > filter.Limit {
+		page.HasMore = true
+		page.Entries = entries[:filter.Limit]
+	}
+	if page.HasMore && len(page.Entries) > 0 {
+		last := page.Entries[len(page.Entries)-1].Item
+		page.NextCursor = &ListCursor{SortAt: itemSortAt(last), ItemID: last.ID}
+	}
+
+	return page, nil
+}
+
+func (p *postgresBackend) GetStats(ctx context.Context, userID string) (Stats, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return Stats{}, err
+	}
+
+	stats := Stats{}
+	if err := p.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM history_items
+		WHERE user_id = $1 AND deleted_at IS NULL
+	`, userID).Scan(&stats.TotalItems); err != nil {
+		return Stats{}, fmt.Errorf("query history total items: %w", err)
+	}
+
+	if err := p.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(*) AS total_attempts,
+			COUNT(*) FILTER (WHERE ha.status = 'done') AS success_count,
+			COUNT(*) FILTER (WHERE ha.status = 'failed') AS failed_count,
+			COALESCE(SUM(CASE WHEN ha.status = 'done' THEN ha.size_bytes ELSE 0 END), 0) AS total_bytes_downloaded,
+			COUNT(*) FILTER (WHERE ha.created_at >= (date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')) AS this_month_attempts
+		FROM history_attempts ha
+		JOIN history_items hi ON hi.id = ha.history_item_id AND hi.user_id = ha.user_id
+		WHERE ha.user_id = $1 AND hi.deleted_at IS NULL
+	`, userID).Scan(
+		&stats.TotalAttempts,
+		&stats.SuccessCount,
+		&stats.FailedCount,
+		&stats.TotalBytesDownloaded,
+		&stats.ThisMonthAttempts,
+	); err != nil {
+		return Stats{}, fmt.Errorf("query history stats aggregates: %w", err)
+	}
+
+	return stats, nil
+}
+
 func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 	p.schemaMu.Lock()
 	defer p.schemaMu.Unlock()
@@ -537,6 +705,125 @@ func scanAttempt(row interface{ Scan(dest ...any) error }) (Attempt, error) {
 	}
 
 	return attempt, nil
+}
+
+func scanListEntry(row interface{ Scan(dest ...any) error }) (ListEntry, error) {
+	var (
+		entry          ListEntry
+		platform       string
+		title          sql.NullString
+		thumbnailURL   sql.NullString
+		lastAttemptAt  sql.NullTime
+		lastSuccessAt  sql.NullTime
+		deletedAt      sql.NullTime
+		attemptID      sql.NullString
+		attemptItemID  sql.NullString
+		attemptUserID  sql.NullString
+		requestKind    sql.NullString
+		status         sql.NullString
+		formatID       sql.NullString
+		qualityLabel   sql.NullString
+		sizeBytes      sql.NullInt64
+		jobID          sql.NullString
+		outputKey      sql.NullString
+		downloadURL    sql.NullString
+		expiresAt      sql.NullTime
+		errorCode      sql.NullString
+		errorText      sql.NullString
+		attemptCreated sql.NullTime
+		attemptUpdated sql.NullTime
+		completedAt    sql.NullTime
+	)
+
+	err := row.Scan(
+		&entry.Item.ID,
+		&entry.Item.UserID,
+		&platform,
+		&entry.Item.SourceURL,
+		&entry.Item.SourceURLHash,
+		&title,
+		&thumbnailURL,
+		&lastAttemptAt,
+		&lastSuccessAt,
+		&entry.Item.AttemptCount,
+		&deletedAt,
+		&entry.Item.CreatedAt,
+		&entry.Item.UpdatedAt,
+		&attemptID,
+		&attemptItemID,
+		&attemptUserID,
+		&requestKind,
+		&status,
+		&formatID,
+		&qualityLabel,
+		&sizeBytes,
+		&jobID,
+		&outputKey,
+		&downloadURL,
+		&expiresAt,
+		&errorCode,
+		&errorText,
+		&attemptCreated,
+		&attemptUpdated,
+		&completedAt,
+	)
+	if err != nil {
+		return ListEntry{}, err
+	}
+
+	entry.Item.Platform = Platform(platform)
+	entry.Item.Title = title.String
+	entry.Item.ThumbnailURL = thumbnailURL.String
+	if lastAttemptAt.Valid {
+		t := lastAttemptAt.Time.UTC()
+		entry.Item.LastAttemptAt = &t
+	}
+	if lastSuccessAt.Valid {
+		t := lastSuccessAt.Time.UTC()
+		entry.Item.LastSuccessAt = &t
+	}
+	if deletedAt.Valid {
+		t := deletedAt.Time.UTC()
+		entry.Item.DeletedAt = &t
+	}
+
+	if attemptID.Valid {
+		attempt := Attempt{
+			ID:            attemptID.String,
+			HistoryItemID: attemptItemID.String,
+			UserID:        attemptUserID.String,
+			RequestKind:   RequestKind(requestKind.String),
+			Status:        AttemptStatus(status.String),
+			FormatID:      formatID.String,
+			QualityLabel:  qualityLabel.String,
+			JobID:         jobID.String,
+			OutputKey:     outputKey.String,
+			DownloadURL:   downloadURL.String,
+			ErrorCode:     errorCode.String,
+			ErrorText:     errorText.String,
+		}
+		if sizeBytes.Valid {
+			value := sizeBytes.Int64
+			attempt.SizeBytes = &value
+		}
+		if expiresAt.Valid {
+			t := expiresAt.Time.UTC()
+			attempt.ExpiresAt = &t
+		}
+		if attemptCreated.Valid {
+			attempt.CreatedAt = attemptCreated.Time.UTC()
+		}
+		if attemptUpdated.Valid {
+			attempt.UpdatedAt = attemptUpdated.Time.UTC()
+		}
+		if completedAt.Valid {
+			t := completedAt.Time.UTC()
+			attempt.CompletedAt = &t
+		}
+		entry.LatestAttempt = &attempt
+	}
+
+	return entry, nil
 }
 
 func mapPostgresWriteError(err error) error {

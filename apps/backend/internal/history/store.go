@@ -42,6 +42,11 @@ var (
 	ErrInvalidInput    = errors.New("invalid history input")
 )
 
+const (
+	DefaultListLimit = 20
+	MaxListLimit     = 50
+)
+
 type Platform string
 
 type RequestKind string
@@ -84,6 +89,39 @@ type Attempt struct {
 	CompletedAt   *time.Time
 }
 
+type ListCursor struct {
+	SortAt time.Time
+	ItemID string
+}
+
+type ListFilter struct {
+	Limit    int
+	Cursor   *ListCursor
+	Platform Platform
+	Query    string
+	Status   AttemptStatus
+}
+
+type ListEntry struct {
+	Item          Item
+	LatestAttempt *Attempt
+}
+
+type ListPage struct {
+	Entries    []ListEntry
+	NextCursor *ListCursor
+	HasMore    bool
+}
+
+type Stats struct {
+	TotalItems           int64
+	TotalAttempts        int64
+	SuccessCount         int64
+	FailedCount          int64
+	TotalBytesDownloaded int64
+	ThisMonthAttempts    int64
+}
+
 type backend interface {
 	Close() error
 	EnsureReady(ctx context.Context) error
@@ -95,6 +133,9 @@ type backend interface {
 	UpdateAttempt(ctx context.Context, attempt Attempt) error
 	GetAttemptByID(ctx context.Context, userID, attemptID string) (Attempt, error)
 	GetAttemptByJobID(ctx context.Context, jobID string) (Attempt, error)
+	GetLatestAttemptByItem(ctx context.Context, userID, itemID string) (Attempt, error)
+	ListItems(ctx context.Context, userID string, filter ListFilter) (ListPage, error)
+	GetStats(ctx context.Context, userID string) (Stats, error)
 }
 
 type Store struct {
@@ -277,6 +318,65 @@ func (s *Store) GetAttemptByJobID(ctx context.Context, jobID string) (Attempt, e
 		return Attempt{}, fmt.Errorf("%w: job_id is required", ErrInvalidInput)
 	}
 	return s.backend.GetAttemptByJobID(ctx, trimmedJobID)
+}
+
+func (s *Store) GetLatestAttemptByItem(ctx context.Context, userID, itemID string) (Attempt, error) {
+	if s == nil || s.backend == nil {
+		return Attempt{}, errors.New("history store is not initialized")
+	}
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedItemID := strings.TrimSpace(itemID)
+	if trimmedUserID == "" || trimmedItemID == "" {
+		return Attempt{}, fmt.Errorf("%w: user_id and item_id are required", ErrInvalidInput)
+	}
+	return s.backend.GetLatestAttemptByItem(ctx, trimmedUserID, trimmedItemID)
+}
+
+func (s *Store) ListItems(ctx context.Context, userID string, filter ListFilter) (ListPage, error) {
+	if s == nil || s.backend == nil {
+		return ListPage{}, errors.New("history store is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return ListPage{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+
+	if filter.Limit <= 0 {
+		filter.Limit = DefaultListLimit
+	}
+	if filter.Limit > MaxListLimit {
+		filter.Limit = MaxListLimit
+	}
+	filter.Query = strings.TrimSpace(filter.Query)
+
+	if filter.Platform != "" && !isValidPlatform(filter.Platform) {
+		return ListPage{}, fmt.Errorf("%w: platform is invalid", ErrInvalidInput)
+	}
+	if filter.Status != "" && !isValidAttemptStatus(filter.Status) {
+		return ListPage{}, fmt.Errorf("%w: status is invalid", ErrInvalidInput)
+	}
+
+	if filter.Cursor != nil {
+		filter.Cursor.ItemID = strings.TrimSpace(filter.Cursor.ItemID)
+		if filter.Cursor.SortAt.IsZero() || filter.Cursor.ItemID == "" {
+			return ListPage{}, fmt.Errorf("%w: cursor is invalid", ErrInvalidInput)
+		}
+		filter.Cursor.SortAt = filter.Cursor.SortAt.UTC()
+	}
+
+	return s.backend.ListItems(ctx, trimmedUserID, filter)
+}
+
+func (s *Store) GetStats(ctx context.Context, userID string) (Stats, error) {
+	if s == nil || s.backend == nil {
+		return Stats{}, errors.New("history store is not initialized")
+	}
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return Stats{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
+	}
+	return s.backend.GetStats(ctx, trimmedUserID)
 }
 
 func (s *Store) UpdateAttempt(ctx context.Context, userID, attemptID string, mutate func(*Attempt)) (Attempt, error) {

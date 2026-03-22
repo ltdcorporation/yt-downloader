@@ -218,3 +218,122 @@ func TestPostgresBackendIntegration_AttemptRequiresMatchingItemUser(t *testing.T
 		t.Fatalf("expected ErrItemNotFound for mismatched user/item link, got %v", err)
 	}
 }
+
+func TestPostgresBackendIntegration_ListStatsAndLatestAttempt(t *testing.T) {
+	dsn, cleanup := createTempPostgresDatabase(t)
+	defer cleanup()
+
+	backend := newPostgresBackend(dsn)
+	defer func() { _ = backend.Close() }()
+
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	item1, err := backend.UpsertItem(ctx, Item{
+		ID:            "his_pg_list_1",
+		UserID:        "user_1",
+		Platform:      PlatformYouTube,
+		SourceURL:     "https://youtube.com/watch?v=one",
+		SourceURLHash: "hash_one",
+		Title:         "Alpha",
+		LastAttemptAt: ptrTimeValue(now.Add(-time.Minute)),
+		AttemptCount:  1,
+		CreatedAt:     now.Add(-2 * time.Minute),
+		UpdatedAt:     now.Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("unexpected upsert item1 error: %v", err)
+	}
+
+	item2, err := backend.UpsertItem(ctx, Item{
+		ID:            "his_pg_list_2",
+		UserID:        "user_1",
+		Platform:      PlatformTikTok,
+		SourceURL:     "https://tiktok.com/@u/video/2",
+		SourceURLHash: "hash_two",
+		Title:         "Beta",
+		LastAttemptAt: ptrTimeValue(now),
+		AttemptCount:  1,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	})
+	if err != nil {
+		t.Fatalf("unexpected upsert item2 error: %v", err)
+	}
+
+	if err := backend.CreateAttempt(ctx, Attempt{
+		ID:            "hat_pg_list_1",
+		HistoryItemID: item1.ID,
+		UserID:        "user_1",
+		RequestKind:   RequestKindMP3,
+		Status:        StatusDone,
+		SizeBytes:     ptrInt64(111),
+		CreatedAt:     now.Add(-time.Minute),
+		UpdatedAt:     now.Add(-time.Minute),
+	}); err != nil {
+		t.Fatalf("unexpected create attempt item1: %v", err)
+	}
+	if err := backend.CreateAttempt(ctx, Attempt{
+		ID:            "hat_pg_list_2",
+		HistoryItemID: item2.ID,
+		UserID:        "user_1",
+		RequestKind:   RequestKindMP4,
+		Status:        StatusFailed,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}); err != nil {
+		t.Fatalf("unexpected create attempt item2: %v", err)
+	}
+
+	latest, err := backend.GetLatestAttemptByItem(ctx, "user_1", item2.ID)
+	if err != nil {
+		t.Fatalf("unexpected latest attempt error: %v", err)
+	}
+	if latest.ID != "hat_pg_list_2" {
+		t.Fatalf("unexpected latest attempt id: %s", latest.ID)
+	}
+
+	firstPage, err := backend.ListItems(ctx, "user_1", ListFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("unexpected list first page error: %v", err)
+	}
+	if len(firstPage.Entries) != 1 || firstPage.Entries[0].Item.ID != item2.ID {
+		t.Fatalf("unexpected first page: %+v", firstPage.Entries)
+	}
+	if !firstPage.HasMore || firstPage.NextCursor == nil {
+		t.Fatalf("expected has_more + next_cursor on first page")
+	}
+
+	secondPage, err := backend.ListItems(ctx, "user_1", ListFilter{Limit: 10, Cursor: firstPage.NextCursor})
+	if err != nil {
+		t.Fatalf("unexpected list second page error: %v", err)
+	}
+	if len(secondPage.Entries) != 1 || secondPage.Entries[0].Item.ID != item1.ID {
+		t.Fatalf("unexpected second page: %+v", secondPage.Entries)
+	}
+
+	filtered, err := backend.ListItems(ctx, "user_1", ListFilter{Limit: 10, Platform: PlatformYouTube, Query: "alpha", Status: StatusDone})
+	if err != nil {
+		t.Fatalf("unexpected list filtered error: %v", err)
+	}
+	if len(filtered.Entries) != 1 || filtered.Entries[0].Item.ID != item1.ID {
+		t.Fatalf("unexpected filtered page: %+v", filtered.Entries)
+	}
+
+	stats, err := backend.GetStats(ctx, "user_1")
+	if err != nil {
+		t.Fatalf("unexpected stats error: %v", err)
+	}
+	if stats.TotalItems != 2 || stats.TotalAttempts != 2 {
+		t.Fatalf("unexpected stats counts: %+v", stats)
+	}
+	if stats.SuccessCount != 1 || stats.FailedCount != 1 {
+		t.Fatalf("unexpected stats status counts: %+v", stats)
+	}
+	if stats.TotalBytesDownloaded != 111 {
+		t.Fatalf("unexpected stats total bytes: %+v", stats)
+	}
+	if stats.ThisMonthAttempts < 2 {
+		t.Fatalf("expected this month attempts at least 2, got %+v", stats)
+	}
+}

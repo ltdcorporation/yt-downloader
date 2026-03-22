@@ -3,6 +3,8 @@ package history
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -197,6 +199,177 @@ func (m *memoryBackend) GetAttemptByJobID(_ context.Context, jobID string) (Atte
 		return Attempt{}, ErrAttemptNotFound
 	}
 	return copyAttempt(attempt), nil
+}
+
+func (m *memoryBackend) GetLatestAttemptByItem(_ context.Context, userID, itemID string) (Attempt, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	item, ok := m.itemsByID[itemID]
+	if !ok || item.UserID != userID || item.DeletedAt != nil {
+		return Attempt{}, ErrItemNotFound
+	}
+
+	attempt, ok := m.latestAttemptForItemLocked(userID, itemID)
+	if !ok {
+		return Attempt{}, ErrAttemptNotFound
+	}
+	return copyAttempt(attempt), nil
+}
+
+func (m *memoryBackend) ListItems(_ context.Context, userID string, filter ListFilter) (ListPage, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	entries := make([]ListEntry, 0, len(m.itemsByID))
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+
+	for _, item := range m.itemsByID {
+		if item.UserID != userID || item.DeletedAt != nil {
+			continue
+		}
+		if filter.Platform != "" && item.Platform != filter.Platform {
+			continue
+		}
+		if query != "" {
+			title := strings.ToLower(item.Title)
+			sourceURL := strings.ToLower(item.SourceURL)
+			if !strings.Contains(title, query) && !strings.Contains(sourceURL, query) {
+				continue
+			}
+		}
+
+		latestAttempt, hasAttempt := m.latestAttemptForItemLocked(userID, item.ID)
+		if filter.Status != "" {
+			if !hasAttempt || latestAttempt.Status != filter.Status {
+				continue
+			}
+		}
+
+		entry := ListEntry{Item: copyItem(item)}
+		if hasAttempt {
+			attemptCopy := copyAttempt(latestAttempt)
+			entry.LatestAttempt = &attemptCopy
+		}
+		entries = append(entries, entry)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		leftSortAt := itemSortAt(entries[i].Item)
+		rightSortAt := itemSortAt(entries[j].Item)
+		if leftSortAt.Equal(rightSortAt) {
+			return entries[i].Item.ID > entries[j].Item.ID
+		}
+		return leftSortAt.After(rightSortAt)
+	})
+
+	filtered := make([]ListEntry, 0, len(entries))
+	for _, entry := range entries {
+		if filter.Cursor != nil {
+			sortAt := itemSortAt(entry.Item)
+			if sortAt.After(filter.Cursor.SortAt) {
+				continue
+			}
+			if sortAt.Equal(filter.Cursor.SortAt) && entry.Item.ID >= filter.Cursor.ItemID {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = DefaultListLimit
+	}
+	if limit > MaxListLimit {
+		limit = MaxListLimit
+	}
+
+	page := ListPage{Entries: make([]ListEntry, 0, limit)}
+	for i, entry := range filtered {
+		if i >= limit {
+			page.HasMore = true
+			break
+		}
+		page.Entries = append(page.Entries, entry)
+	}
+	if page.HasMore && len(page.Entries) > 0 {
+		last := page.Entries[len(page.Entries)-1].Item
+		page.NextCursor = &ListCursor{SortAt: itemSortAt(last), ItemID: last.ID}
+	}
+
+	return page, nil
+}
+
+func (m *memoryBackend) GetStats(_ context.Context, userID string) (Stats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	stats := Stats{}
+	activeItemIDs := make(map[string]struct{})
+	monthStart := time.Now().UTC().Truncate(24 * time.Hour)
+	monthStart = time.Date(monthStart.Year(), monthStart.Month(), 1, 0, 0, 0, 0, time.UTC)
+
+	for _, item := range m.itemsByID {
+		if item.UserID != userID || item.DeletedAt != nil {
+			continue
+		}
+		stats.TotalItems++
+		activeItemIDs[item.ID] = struct{}{}
+	}
+
+	for _, attempt := range m.attemptsByID {
+		if attempt.UserID != userID {
+			continue
+		}
+		if _, ok := activeItemIDs[attempt.HistoryItemID]; !ok {
+			continue
+		}
+
+		stats.TotalAttempts++
+		switch attempt.Status {
+		case StatusDone:
+			stats.SuccessCount++
+			if attempt.SizeBytes != nil {
+				stats.TotalBytesDownloaded += *attempt.SizeBytes
+			}
+		case StatusFailed:
+			stats.FailedCount++
+		}
+		if !attempt.CreatedAt.Before(monthStart) {
+			stats.ThisMonthAttempts++
+		}
+	}
+
+	return stats, nil
+}
+
+func (m *memoryBackend) latestAttemptForItemLocked(userID, itemID string) (Attempt, bool) {
+	var (
+		latest Attempt
+		found  bool
+	)
+	for _, attempt := range m.attemptsByID {
+		if attempt.UserID != userID || attempt.HistoryItemID != itemID {
+			continue
+		}
+		if !found {
+			latest = attempt
+			found = true
+			continue
+		}
+		if attempt.CreatedAt.After(latest.CreatedAt) || (attempt.CreatedAt.Equal(latest.CreatedAt) && attempt.ID > latest.ID) {
+			latest = attempt
+		}
+	}
+	return latest, found
+}
+
+func itemSortAt(item Item) time.Time {
+	if item.LastAttemptAt != nil {
+		return item.LastAttemptAt.UTC()
+	}
+	return item.CreatedAt.UTC()
 }
 
 func buildUserHashKey(userID, sourceURLHash string) string {

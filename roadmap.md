@@ -150,6 +150,12 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
   - [x] Write-path authenticated di `POST /v1/jobs/mp3` (create queued attempt)
   - [x] Worker sinkron status history attempt by `job_id` (`processing/done/failed`)
   - [x] Write-path authenticated di `GET /v1/download/mp4` (processing -> done/failed)
+- [x] History backend enterprise **Phase 3** selesai:
+  - [x] Read API `GET /v1/history` (cursor pagination + filter platform/status/query)
+  - [x] Stats API `GET /v1/history/stats`
+  - [x] Action API `POST /v1/history/{id}/redownload` (mode direct/queued)
+  - [x] Delete API `DELETE /v1/history/{id}` (soft delete owner-scoped)
+  - [x] Test suite history handlers + store query path
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
 - [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
 - [x] R2 sudah diisi config real
