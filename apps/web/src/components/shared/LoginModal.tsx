@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   X,
   EnvelopeSimple,
@@ -59,6 +59,21 @@ export default function LoginModal({
 
   const isGoogleConfigured = hasGoogleClientID();
 
+  const resetForm = useCallback(() => {
+    setEmail("");
+    setPassword("");
+    setShowPassword(false);
+    setKeepLoggedIn(false);
+    setIsLoading(false);
+    setIsGoogleLoading(false);
+    setErrorMessage("");
+  }, []);
+
+  const handleClose = useCallback(() => {
+    resetForm();
+    onClose();
+  }, [onClose, resetForm]);
+
   useEffect(() => {
     if (!isOpen || !isGoogleConfigured) {
       return;
@@ -96,32 +111,35 @@ export default function LoginModal({
     window.addEventListener("quicksnap:google-token", handleGoogleToken);
 
     const initGoogle = async () => {
-...
+      try {
+        await warmupGoogleIdentity();
+        if (googleButtonRef.current) {
+          googleButtonRef.current.innerHTML = "";
+          await renderGoogleButton(googleButtonRef.current, {
+            text: "signin_with",
+          });
+        }
+      } catch (err) {
+        console.error("Google init failed:", err);
+      }
+    };
+
     void initGoogle();
 
     return () => {
       window.removeEventListener("quicksnap:google-token", handleGoogleToken);
     };
-  }, [isOpen, isGoogleConfigured, keepLoggedIn, setCurrentUser]);
+  }, [
+    handleClose,
+    isGoogleConfigured,
+    isOpen,
+    keepLoggedIn,
+    setCurrentUser,
+  ]);
 
   if (!isOpen) {
     return null;
   }
-
-  const resetForm = () => {
-    setEmail("");
-    setPassword("");
-    setShowPassword(false);
-    setKeepLoggedIn(false);
-    setIsLoading(false);
-    setIsGoogleLoading(false);
-    setErrorMessage("");
-  };
-
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   X,
   User,
@@ -57,6 +57,20 @@ export default function SignupModal({
 
   const isGoogleConfigured = hasGoogleClientID();
 
+  const resetForm = useCallback(() => {
+    setFullName("");
+    setEmail("");
+    setPassword("");
+    setIsLoading(false);
+    setIsGoogleLoading(false);
+    setErrorMessage("");
+  }, []);
+
+  const handleClose = useCallback(() => {
+    resetForm();
+    onClose();
+  }, [onClose, resetForm]);
+
   useEffect(() => {
     if (!isOpen || !isGoogleConfigured) {
       return;
@@ -111,25 +125,11 @@ export default function SignupModal({
     return () => {
       window.removeEventListener("quicksnap:google-token", handleGoogleToken);
     };
-  }, [isOpen, isGoogleConfigured, setCurrentUser]);
+  }, [handleClose, isGoogleConfigured, isOpen, setCurrentUser]);
 
   if (!isOpen) {
     return null;
   }
-
-  const resetForm = () => {
-    setFullName("");
-    setEmail("");
-    setPassword("");
-    setIsLoading(false);
-    setIsGoogleLoading(false);
-    setErrorMessage("");
-  };
-
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

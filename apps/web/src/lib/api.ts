@@ -48,6 +48,64 @@ export interface JobStatusResponse {
   updated_at?: string;
 }
 
+export type HistoryPlatform = "youtube" | "tiktok" | "instagram" | "x";
+
+export type HistoryAttemptStatus =
+  | "queued"
+  | "processing"
+  | "done"
+  | "failed"
+  | "expired";
+
+export type HistoryRequestKind = "mp3" | "mp4" | "image";
+
+export interface HistoryLatestAttempt {
+  id: string;
+  request_kind: HistoryRequestKind;
+  status: HistoryAttemptStatus;
+  format_id?: string;
+  quality_label?: string;
+  size_bytes?: number | null;
+  download_url?: string;
+  expires_at?: string | null;
+  created_at?: string;
+}
+
+export interface HistoryListItem {
+  id: string;
+  title: string;
+  thumbnail_url: string;
+  platform: HistoryPlatform;
+  source_url: string;
+  last_attempt_at: string;
+  latest_attempt?: HistoryLatestAttempt | null;
+}
+
+export interface HistoryListResponse {
+  items: HistoryListItem[];
+  page: {
+    next_cursor?: string | null;
+    has_more: boolean;
+    limit: number;
+  };
+}
+
+export interface HistoryStatsResponse {
+  total_items: number;
+  total_attempts: number;
+  success_count: number;
+  failed_count: number;
+  total_bytes_downloaded: number;
+  this_month_attempts: number;
+}
+
+export interface HistoryRedownloadResponse {
+  mode: "direct" | "queued";
+  download_url?: string;
+  job_id?: string;
+  status?: string;
+}
+
 export interface AuthUser {
   id: string;
   full_name: string;
@@ -181,7 +239,72 @@ export const api = {
       body: JSON.stringify({ url }),
     }),
 
-  getJobStatus: (jobId: string) => fetcher<JobStatusResponse>(`/v1/jobs/${jobId}`),
+  getJobStatus: (jobId: string) =>
+    fetcher<JobStatusResponse>(`/v1/jobs/${jobId}`),
+
+  historyList: (params?: {
+    limit?: number;
+    cursor?: string;
+    platform?: HistoryPlatform;
+    q?: string;
+    status?: HistoryAttemptStatus;
+  }) => {
+    const query = new URLSearchParams();
+
+    if (typeof params?.limit === "number" && params.limit > 0) {
+      query.set("limit", String(params.limit));
+    }
+    if (params?.cursor) {
+      query.set("cursor", params.cursor);
+    }
+    if (params?.platform) {
+      query.set("platform", params.platform);
+    }
+    if (params?.q) {
+      query.set("q", params.q);
+    }
+    if (params?.status) {
+      query.set("status", params.status);
+    }
+
+    const suffix = query.toString();
+    return fetcher<HistoryListResponse>(
+      suffix ? `/v1/history?${suffix}` : "/v1/history",
+    );
+  },
+
+  historyStats: () => fetcher<HistoryStatsResponse>("/v1/history/stats"),
+
+  historyDelete: (id: string) =>
+    fetcher<{ ok: boolean }>(`/v1/history/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+
+  historyRedownload: (
+    id: string,
+    payload?: {
+      requestKind?: HistoryRequestKind;
+      formatId?: string;
+    },
+  ) => {
+    const body: Record<string, string> = {};
+    if (payload?.requestKind) {
+      body.request_kind = payload.requestKind;
+    }
+    if (payload?.formatId) {
+      body.format_id = payload.formatId;
+    }
+
+    return fetcher<HistoryRedownloadResponse>(
+      `/v1/history/${encodeURIComponent(id)}/redownload`,
+      {
+        method: "POST",
+        ...(Object.keys(body).length > 0
+          ? { body: JSON.stringify(body) }
+          : undefined),
+      },
+    );
+  },
 
   getMp4DownloadUrl: (url: string, formatId: string) =>
     `${API_BASE_URL}/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`,

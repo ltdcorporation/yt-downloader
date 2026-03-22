@@ -15,7 +15,7 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [x] Next.js app + basic pages (`/`, `/history`, `/settings`, `/admin`)
 - [x] Home flow **real** untuk YouTube resolve + MP4 download (Step C)
 - [x] Frontend pakai internal proxy `/api/*` (lebih aman buat publik)
-- [x] `/history` masih mock data
+- [x] `/history` sudah terhubung ke API real (history list/stats/redownload/delete)
 - [x] `/settings` masih mock data
 - [x] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
 - [x] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
@@ -54,10 +54,11 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 
 **Target:** `/history` tidak lagi sample statis.
 
-- [ ] Ambil data job real dari backend
-- [ ] Loading, empty-state, error-state yang jelas
-- [ ] Filter dasar (status + search)
-- [ ] Aksi relevan (download again untuk job done)
+- [x] Ambil data job real dari backend (`GET /v1/history` + cursor pagination)
+- [x] Loading, empty-state, error-state yang jelas
+- [x] Filter dasar (platform + search)
+- [x] Aksi relevan (download again + delete)
+- [x] Stats card dari backend (`GET /v1/history/stats`)
 
 ### E. Milestone FE-4 — Settings (Minimum Useful)
 
@@ -121,7 +122,7 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [ ] Error message human-readable (bukan raw error backend)
 - [ ] State konsisten (loading/disabled/success/error)
 - [ ] Mobile-first tetap enak di viewport kecil
-- [ ] Tidak ada mock data tersisa di flow MVP
+- [x] Tidak ada mock data tersisa di flow MVP
 
 ---
 

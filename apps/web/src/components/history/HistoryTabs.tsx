@@ -1,15 +1,16 @@
-type Platform = "all" | "youtube" | "tiktok" | "instagram";
+import type { HistoryTabPlatform } from "./types";
 
 interface HistoryTabsProps {
-  activeTab: Platform;
-  onChange: (platform: Platform) => void;
+  activeTab: HistoryTabPlatform;
+  onChange: (platform: HistoryTabPlatform) => void;
 }
 
-const TABS: { id: Platform; label: string }[] = [
+const TABS: { id: HistoryTabPlatform; label: string }[] = [
   { id: "all", label: "All Downloads" },
   { id: "youtube", label: "YouTube" },
   { id: "tiktok", label: "TikTok" },
   { id: "instagram", label: "Instagram" },
+  { id: "x", label: "X / Twitter" },
 ];
 
 export default function HistoryTabs({ activeTab, onChange }: HistoryTabsProps) {
