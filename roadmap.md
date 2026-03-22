@@ -3,6 +3,8 @@
 _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
+>
+> Referensi desain enterprise history backend: `docs/history-backend-enterprise-rfc.md`.
 
 ---
 
