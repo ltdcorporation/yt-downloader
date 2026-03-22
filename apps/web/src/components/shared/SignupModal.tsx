@@ -108,9 +108,12 @@ export default function SignupModal({
     window.addEventListener("quicksnap:google-token", handleGoogleToken);
 
     const initGoogle = async () => {
+      // Small delay to ensure modal animation is far enough for DOM measurements
+      await new Promise((resolve) => setTimeout(resolve, 100));
       try {
         await warmupGoogleIdentity();
         if (googleButtonRef.current) {
+          googleButtonRef.current.innerHTML = "";
           await renderGoogleButton(googleButtonRef.current, {
             text: "signup_with",
           });

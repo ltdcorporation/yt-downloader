@@ -107,21 +107,27 @@ function consumePendingRequestWithError(error: Error): void {
 }
 
 async function onGoogleCredential(response: GoogleCredentialResponse): Promise<void> {
+  console.log("[GoogleIdentity] Credential response received:", response ? "exists" : "null");
   const token = response?.credential?.trim();
+  
   if (!token) {
+    console.error("[GoogleIdentity] No token in response");
     const error = new Error("Google tidak mengembalikan credential yang valid.");
     consumePendingRequestWithError(error);
     return;
   }
 
-  // If there's a pending promise-based request, resolve it.
+  console.log("[GoogleIdentity] Token obtained successfully");
+
+  // If there's a pending promise-based request (One Tap), resolve it.
   if (pendingTokenRequest) {
+    console.log("[GoogleIdentity] Resolving pending token request");
     consumePendingRequestWithToken(token);
     return;
   }
 
-  // Otherwise, it might be from renderButton or a direct prompt.
-  // We'll dispatch a custom event so modals can listen for it.
+  // Otherwise, it's likely from renderButton.
+  console.log("[GoogleIdentity] Dispatching quicksnap:google-token event");
   window.dispatchEvent(new CustomEvent("quicksnap:google-token", { detail: token }));
 }
 
@@ -156,6 +162,7 @@ async function loadGoogleIdentityScript(): Promise<void> {
     return scriptLoadPromise;
   }
 
+  console.log("[GoogleIdentity] Loading Google Identity script...");
   scriptLoadPromise = new Promise<void>((resolve, reject) => {
     const existing = document.getElementById(
       GOOGLE_IDENTITY_SCRIPT_ID,
@@ -180,21 +187,25 @@ async function loadGoogleIdentityScript(): Promise<void> {
       cleanup();
       if (!googleIdentityAvailable()) {
         scriptLoadPromise = null;
+        console.error("[GoogleIdentity] Script loaded but API unavailable");
         reject(new Error("Google Identity script loaded but API unavailable."));
         return;
       }
+      console.log("[GoogleIdentity] Script loaded successfully");
       resolve();
     };
 
     const onError = () => {
       cleanup();
       scriptLoadPromise = null;
+      console.error("[GoogleIdentity] Script load failed");
       reject(new Error("Gagal memuat Google Identity script."));
     };
 
     const timeoutId = setTimeout(() => {
       cleanup();
       scriptLoadPromise = null;
+      console.error("[GoogleIdentity] Script load timeout");
       reject(new Error("Timeout saat memuat Google Identity script."));
     }, 15000);
 
@@ -218,6 +229,7 @@ function ensureGoogleIdentityInitialized(clientID: string): void {
     return;
   }
 
+  console.log("[GoogleIdentity] Initializing with Client ID:", clientID.slice(0, 10) + "...");
   window.google?.accounts.id.initialize({
     client_id: clientID,
     callback: onGoogleCredential,
@@ -307,10 +319,11 @@ export async function renderGoogleButton(
   options: any = {},
 ): Promise<void> {
   await ensureReady();
+  console.log("[GoogleIdentity] Rendering Google Button");
   window.google?.accounts.id.renderButton(parent, {
     theme: "outline",
     size: "large",
-    width: parent.offsetWidth ? `${parent.offsetWidth}px` : "100%",
+    width: "100%", // Fixed 100% to avoid parent.offsetWidth issues
     ...options,
   });
 }
