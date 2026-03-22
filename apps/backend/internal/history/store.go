@@ -90,6 +90,7 @@ type backend interface {
 	UpsertItem(ctx context.Context, item Item) (Item, error)
 	GetItemByID(ctx context.Context, userID, itemID string) (Item, error)
 	SoftDeleteItem(ctx context.Context, userID, itemID string, deletedAt time.Time) error
+	MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error
 	CreateAttempt(ctx context.Context, attempt Attempt) error
 	UpdateAttempt(ctx context.Context, attempt Attempt) error
 	GetAttemptByID(ctx context.Context, userID, attemptID string) (Attempt, error)
@@ -140,6 +141,9 @@ func (s *Store) UpsertItem(ctx context.Context, item Item) (Item, error) {
 	item.Title = strings.TrimSpace(item.Title)
 	item.ThumbnailURL = strings.TrimSpace(item.ThumbnailURL)
 
+	if item.ID == "" {
+		return Item{}, fmt.Errorf("%w: item id is required", ErrInvalidInput)
+	}
 	if item.UserID == "" {
 		return Item{}, fmt.Errorf("%w: user_id is required", ErrInvalidInput)
 	}
@@ -189,6 +193,21 @@ func (s *Store) SoftDeleteItem(ctx context.Context, userID, itemID string, delet
 		deletedAt = time.Now().UTC()
 	}
 	return s.backend.SoftDeleteItem(ctx, trimmedUserID, trimmedItemID, deletedAt.UTC())
+}
+
+func (s *Store) MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error {
+	if s == nil || s.backend == nil {
+		return errors.New("history store is not initialized")
+	}
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedItemID := strings.TrimSpace(itemID)
+	if trimmedUserID == "" || trimmedItemID == "" {
+		return fmt.Errorf("%w: user_id and item_id are required", ErrInvalidInput)
+	}
+	if succeededAt.IsZero() {
+		succeededAt = time.Now().UTC()
+	}
+	return s.backend.MarkItemSuccess(ctx, trimmedUserID, trimmedItemID, succeededAt.UTC())
 }
 
 func (s *Store) CreateAttempt(ctx context.Context, attempt Attempt) (Attempt, error) {

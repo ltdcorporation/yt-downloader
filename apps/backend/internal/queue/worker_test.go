@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/jobs"
 )
 
@@ -47,6 +48,57 @@ func (f *fakeJobStore) Update(_ context.Context, jobID string, mutate func(*jobs
 	f.records[jobID] = record
 
 	return record, nil
+}
+
+type fakeHistoryStore struct {
+	attemptByJobID   map[string]history.Attempt
+	attemptByID      map[string]history.Attempt
+	markSuccessErr   error
+	updateErr        error
+	markSuccessCalls int
+	updateCalls      int
+}
+
+func newFakeHistoryStore() *fakeHistoryStore {
+	return &fakeHistoryStore{
+		attemptByJobID: make(map[string]history.Attempt),
+		attemptByID:    make(map[string]history.Attempt),
+	}
+}
+
+func (f *fakeHistoryStore) GetAttemptByJobID(_ context.Context, jobID string) (history.Attempt, error) {
+	attempt, ok := f.attemptByJobID[jobID]
+	if !ok {
+		return history.Attempt{}, history.ErrAttemptNotFound
+	}
+	return attempt, nil
+}
+
+func (f *fakeHistoryStore) UpdateAttempt(_ context.Context, userID, attemptID string, mutate func(*history.Attempt)) (history.Attempt, error) {
+	f.updateCalls++
+	if f.updateErr != nil {
+		return history.Attempt{}, f.updateErr
+	}
+	attempt, ok := f.attemptByID[attemptID]
+	if !ok {
+		return history.Attempt{}, history.ErrAttemptNotFound
+	}
+	if attempt.UserID != userID {
+		return history.Attempt{}, history.ErrAttemptNotFound
+	}
+	if mutate != nil {
+		mutate(&attempt)
+	}
+	f.attemptByID[attemptID] = attempt
+	if attempt.JobID != "" {
+		f.attemptByJobID[attempt.JobID] = attempt
+	}
+	return attempt, nil
+}
+
+func (f *fakeHistoryStore) MarkItemSuccess(_ context.Context, _ string, _ string, _ time.Time) error {
+	f.markSuccessCalls++
+	return f.markSuccessErr
 }
 
 type fakeR2 struct {
@@ -237,12 +289,16 @@ printf 'audio-data' > "$out_file"
 }
 
 func makeWorkerForTest(ytdlpBinary string, store jobStoreUpdater, r2 r2Storage) *Worker {
+	return makeWorkerForTestWithHistory(ytdlpBinary, store, r2, nil)
+}
+
+func makeWorkerForTestWithHistory(ytdlpBinary string, store jobStoreUpdater, r2 r2Storage, historyStore historyStoreUpdater) *Worker {
 	cfg := config.Config{
 		YTDLPBinary:         ytdlpBinary,
 		YTDLPJSRuntimes:     "",
 		MP3OutputTTLMinutes: 60,
 	}
-	return NewWorker(cfg, log.New(io.Discard, "", 0), store, r2)
+	return NewWorker(cfg, log.New(io.Discard, "", 0), store, r2, historyStore)
 }
 
 func makeTask(t *testing.T, payload ConvertMP3Payload) *asynq.Task {
@@ -255,7 +311,7 @@ func makeTask(t *testing.T, payload ConvertMP3Payload) *asynq.Task {
 }
 
 func TestNewWorker_NilLoggerUsesDefault(t *testing.T) {
-	worker := NewWorker(config.Config{}, nil, nil, nil)
+	worker := NewWorker(config.Config{}, nil, nil, nil, nil)
 	if worker == nil {
 		t.Fatal("expected non-nil worker")
 	}
@@ -473,6 +529,106 @@ func TestHandleConvertMP3_SuccessMarksDoneAndUploads(t *testing.T) {
 	}
 	if r2.presignTTL != 60*time.Minute {
 		t.Fatalf("unexpected presign ttl, got %v", r2.presignTTL)
+	}
+}
+
+func TestHandleConvertMP3_SuccessUpdatesHistoryAttempt(t *testing.T) {
+	script := makeFakeYTDLPScript(t, "success", "192k")
+	store := newFakeJobStore()
+	historyStore := newFakeHistoryStore()
+	jobID := "job_history_success"
+	store.records[jobID] = jobs.Record{ID: jobID, Status: jobs.StatusQueued}
+
+	historyAttempt := history.Attempt{
+		ID:            "hat_success",
+		HistoryItemID: "his_success",
+		UserID:        "user_1",
+		RequestKind:   history.RequestKindMP3,
+		Status:        history.StatusQueued,
+		JobID:         jobID,
+	}
+	historyStore.attemptByID[historyAttempt.ID] = historyAttempt
+	historyStore.attemptByJobID[jobID] = historyAttempt
+
+	expiresAt := time.Now().UTC().Add(90 * time.Minute).Truncate(time.Second)
+	r2 := &fakeR2{presignURL: "https://signed.example.com/history-success.mp3", presignExpiresAt: expiresAt}
+	worker := makeWorkerForTestWithHistory(script, store, r2, historyStore)
+	task := makeTask(t, ConvertMP3Payload{
+		JobID:       jobID,
+		SourceURL:   "https://www.youtube.com/watch?v=abc123",
+		OutputKey:   "yt-downloader/prod/mp3/" + jobID + ".mp3",
+		BitrateKbps: 192,
+	})
+
+	if err := worker.handleConvertMP3(context.Background(), task); err != nil {
+		t.Fatalf("expected success, got err: %v", err)
+	}
+
+	attempt := historyStore.attemptByID[historyAttempt.ID]
+	if attempt.Status != history.StatusDone {
+		t.Fatalf("expected history status done, got %s", attempt.Status)
+	}
+	if attempt.DownloadURL != r2.presignURL {
+		t.Fatalf("expected history download url %q, got %q", r2.presignURL, attempt.DownloadURL)
+	}
+	if attempt.OutputKey != "yt-downloader/prod/mp3/"+jobID+".mp3" {
+		t.Fatalf("unexpected history output key: %q", attempt.OutputKey)
+	}
+	if attempt.ExpiresAt == nil || !attempt.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("unexpected history expiresAt, got %+v want %v", attempt.ExpiresAt, expiresAt)
+	}
+	if attempt.CompletedAt == nil {
+		t.Fatalf("expected history completed_at to be set")
+	}
+	if historyStore.markSuccessCalls != 1 {
+		t.Fatalf("expected history item success mark once, got %d", historyStore.markSuccessCalls)
+	}
+}
+
+func TestHandleConvertMP3_FailureUpdatesHistoryAttempt(t *testing.T) {
+	script := makeFakeYTDLPScript(t, "success", "160k")
+	store := newFakeJobStore()
+	historyStore := newFakeHistoryStore()
+	jobID := "job_history_fail"
+	store.records[jobID] = jobs.Record{ID: jobID, Status: jobs.StatusQueued}
+
+	historyAttempt := history.Attempt{
+		ID:            "hat_fail",
+		HistoryItemID: "his_fail",
+		UserID:        "user_1",
+		RequestKind:   history.RequestKindMP3,
+		Status:        history.StatusQueued,
+		JobID:         jobID,
+	}
+	historyStore.attemptByID[historyAttempt.ID] = historyAttempt
+	historyStore.attemptByJobID[jobID] = historyAttempt
+
+	r2 := &fakeR2{uploadErr: errors.New("upload failed")}
+	worker := makeWorkerForTestWithHistory(script, store, r2, historyStore)
+	task := makeTask(t, ConvertMP3Payload{
+		JobID:       jobID,
+		SourceURL:   "https://www.youtube.com/watch?v=abc123",
+		OutputKey:   "yt-downloader/prod/mp3/" + jobID + ".mp3",
+		BitrateKbps: 160,
+	})
+
+	err := worker.handleConvertMP3(context.Background(), task)
+	if err == nil || !strings.Contains(err.Error(), "upload failed") {
+		t.Fatalf("expected upload failure error, got %v", err)
+	}
+
+	attempt := historyStore.attemptByID[historyAttempt.ID]
+	if attempt.Status != history.StatusFailed {
+		t.Fatalf("expected history status failed, got %s", attempt.Status)
+	}
+	if !strings.Contains(attempt.ErrorText, "upload failed") {
+		t.Fatalf("expected history error text to include upload failure, got %q", attempt.ErrorText)
+	}
+	if attempt.CompletedAt == nil {
+		t.Fatalf("expected history completed_at on failure")
+	}
+	if historyStore.markSuccessCalls != 0 {
+		t.Fatalf("expected no history item success mark on failure, got %d", historyStore.markSuccessCalls)
 	}
 }
 

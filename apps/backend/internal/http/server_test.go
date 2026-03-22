@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -209,6 +210,33 @@ func decodeJSONMap(t *testing.T, body []byte) map[string]any {
 		t.Fatalf("failed to decode JSON: %v body=%s", err, string(body))
 	}
 	return payload
+}
+
+func registerUserAndGetToken(t *testing.T, server *Server) (string, string) {
+	t.Helper()
+	email := fmt.Sprintf("history-%d@example.com", time.Now().UnixNano())
+	body := bytes.NewBufferString(fmt.Sprintf(`{"full_name":"History User","email":"%s","password":"Password123","keep_logged_in":true}`, email))
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/register", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for register, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	payload := decodeJSONMap(t, rec.Body.Bytes())
+	token, _ := payload["access_token"].(string)
+	if token == "" {
+		t.Fatalf("missing access_token in register response: %s", rec.Body.String())
+	}
+	userObj, ok := payload["user"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing user object in register response: %s", rec.Body.String())
+	}
+	userID, _ := userObj["id"].(string)
+	if userID == "" {
+		t.Fatalf("missing user id in register response: %s", rec.Body.String())
+	}
+	return token, userID
 }
 
 func TestBuildMP3OutputKey(t *testing.T) {
@@ -787,6 +815,65 @@ func TestHandleCreateMP3Job(t *testing.T) {
 		}
 	})
 
+	t.Run("authenticated request creates history attempt", func(t *testing.T) {
+		cfg := baseTestConfig()
+		resolver := &fakeResolver{result: youtube.ResolveResult{Title: "Test Video", Thumbnail: "https://img.example.com/thumb.jpg"}}
+		queue := &fakeQueue{}
+		store := newFakeJobStore()
+		server := newTestServer(t, cfg, resolver, queue, store)
+
+		token, userID := registerUserAndGetToken(t, server)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/jobs/mp3", bytes.NewBufferString(`{"url":"https://www.youtube.com/watch?v=abc123"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		jobID, _ := payload["job_id"].(string)
+		if jobID == "" {
+			t.Fatalf("missing job_id in response: %s", rec.Body.String())
+		}
+
+		attempt, err := server.historyStore.GetAttemptByJobID(context.Background(), jobID)
+		if err != nil {
+			t.Fatalf("expected history attempt for job %s, got err=%v", jobID, err)
+		}
+		if attempt.UserID != userID {
+			t.Fatalf("expected history attempt user_id %s, got %s", userID, attempt.UserID)
+		}
+		if attempt.Status != "queued" {
+			t.Fatalf("expected history attempt queued, got %s", attempt.Status)
+		}
+		if attempt.RequestKind != "mp3" {
+			t.Fatalf("expected history attempt request_kind mp3, got %s", attempt.RequestKind)
+		}
+		if attempt.OutputKey != "yt-downloader/prod/mp3/"+jobID+".mp3" {
+			t.Fatalf("unexpected history output key: %s", attempt.OutputKey)
+		}
+		if attempt.QualityLabel != "192kbps" {
+			t.Fatalf("unexpected history quality label: %s", attempt.QualityLabel)
+		}
+
+		item, err := server.historyStore.GetItemByID(context.Background(), userID, attempt.HistoryItemID)
+		if err != nil {
+			t.Fatalf("expected history item for attempt, got err=%v", err)
+		}
+		if item.Platform != "youtube" {
+			t.Fatalf("expected platform youtube, got %s", item.Platform)
+		}
+		if item.Title != "Test Video" {
+			t.Fatalf("unexpected item title: %s", item.Title)
+		}
+		if item.ThumbnailURL != "https://img.example.com/thumb.jpg" {
+			t.Fatalf("unexpected item thumbnail: %s", item.ThumbnailURL)
+		}
+	})
+
 	t.Run("curl input carries headers and user-agent", func(t *testing.T) {
 		cfg := baseTestConfig()
 		resolver := &fakeResolver{result: youtube.ResolveResult{Title: "Test Video"}}
@@ -838,6 +925,45 @@ func TestHandleCreateMP3Job(t *testing.T) {
 
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("expected 500, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("authenticated queue failure marks history attempt failed", func(t *testing.T) {
+		cfg := baseTestConfig()
+		resolver := &fakeResolver{result: youtube.ResolveResult{Title: "Test Video"}}
+		queue := &fakeQueue{err: errors.New("enqueue failed")}
+		store := newFakeJobStore()
+		server := newTestServer(t, cfg, resolver, queue, store)
+		token, _ := registerUserAndGetToken(t, server)
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/jobs/mp3", bytes.NewBufferString(`{"url":"https://www.youtube.com/watch?v=abc123"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d body=%s", rec.Code, rec.Body.String())
+		}
+
+		if len(store.records) != 1 {
+			t.Fatalf("expected 1 stored record, got %d", len(store.records))
+		}
+
+		for _, record := range store.records {
+			attempt, err := server.historyStore.GetAttemptByJobID(context.Background(), record.ID)
+			if err != nil {
+				t.Fatalf("expected history attempt for failed queue job=%s, err=%v", record.ID, err)
+			}
+			if attempt.Status != "failed" {
+				t.Fatalf("expected history status failed, got %s", attempt.Status)
+			}
+			if attempt.ErrorCode != "queue_enqueue_failed" {
+				t.Fatalf("unexpected history error code: %s", attempt.ErrorCode)
+			}
+			if !strings.Contains(attempt.ErrorText, "enqueue failed") {
+				t.Fatalf("expected history error text to mention enqueue failure, got %q", attempt.ErrorText)
+			}
 		}
 	})
 

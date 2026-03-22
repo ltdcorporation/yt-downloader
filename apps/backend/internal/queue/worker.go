@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/jobs"
 )
 
@@ -39,6 +40,12 @@ type r2Storage interface {
 	PresignDownloadURL(ctx context.Context, key string, expiresIn time.Duration) (string, time.Time, error)
 }
 
+type historyStoreUpdater interface {
+	GetAttemptByJobID(ctx context.Context, jobID string) (history.Attempt, error)
+	UpdateAttempt(ctx context.Context, userID, attemptID string, mutate func(*history.Attempt)) (history.Attempt, error)
+	MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error
+}
+
 type asynqServerRunner interface {
 	Run(handler asynq.Handler) error
 }
@@ -47,21 +54,23 @@ type Worker struct {
 	cfg           config.Config
 	logger        *log.Logger
 	jobStore      jobStoreUpdater
+	historyStore  historyStoreUpdater
 	r2            r2Storage
 	serverFactory func(redisOpt asynq.RedisClientOpt, cfg asynq.Config) asynqServerRunner
 	mkTempDir     func(dir, pattern string) (string, error)
 }
 
-func NewWorker(cfg config.Config, logger *log.Logger, jobStore jobStoreUpdater, r2 r2Storage) *Worker {
+func NewWorker(cfg config.Config, logger *log.Logger, jobStore jobStoreUpdater, r2 r2Storage, historyStore historyStoreUpdater) *Worker {
 	if logger == nil {
 		logger = log.Default()
 	}
 
 	return &Worker{
-		cfg:      cfg,
-		logger:   logger,
-		jobStore: jobStore,
-		r2:       r2,
+		cfg:          cfg,
+		logger:       logger,
+		jobStore:     jobStore,
+		historyStore: historyStore,
+		r2:           r2,
 		serverFactory: func(redisOpt asynq.RedisClientOpt, cfg asynq.Config) asynqServerRunner {
 			return asynq.NewServer(redisOpt, cfg)
 		},
@@ -119,6 +128,7 @@ func (w *Worker) handleConvertMP3(_ context.Context, task *asynq.Task) error {
 			w.logger.Printf("failed to mark job processing id=%s err=%v", payload.JobID, err)
 		}
 	}
+	w.markHistoryAttemptProcessing(payload.JobID)
 
 	localFile, cleanup, err := w.convertMP3(ctx, payload)
 	if err != nil {
@@ -149,6 +159,7 @@ func (w *Worker) handleConvertMP3(_ context.Context, task *asynq.Task) error {
 			return err
 		}
 	}
+	w.markHistoryAttemptDone(payload.JobID, payload.OutputKey, downloadURL, expiresAt)
 
 	w.logger.Printf("convert mp3 done job=%s output_key=%s", payload.JobID, payload.OutputKey)
 	return nil
@@ -164,6 +175,7 @@ func (w *Worker) failJob(ctx context.Context, jobID string, err error) error {
 			w.logger.Printf("failed to mark job failed id=%s err=%v", jobID, updateErr)
 		}
 	}
+	w.markHistoryAttemptFailed(jobID, err)
 	w.logger.Printf("convert mp3 failed job=%s err=%v", jobID, err)
 	return err
 }
@@ -236,6 +248,105 @@ func (w *Worker) convertMP3(ctx context.Context, payload ConvertMP3Payload) (str
 		return "", nil, errors.New("mp3 output not found after conversion")
 	}
 	return matches[0], cleanup, nil
+}
+
+func (w *Worker) markHistoryAttemptProcessing(jobID string) {
+	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	attempt, err := w.historyStore.GetAttemptByJobID(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, history.ErrAttemptNotFound) {
+			return
+		}
+		w.logger.Printf("history update skipped job=%s stage=processing err=%v", jobID, err)
+		return
+	}
+
+	_, err = w.historyStore.UpdateAttempt(ctx, attempt.UserID, attempt.ID, func(a *history.Attempt) {
+		a.Status = history.StatusProcessing
+		a.ErrorCode = ""
+		a.ErrorText = ""
+		a.CompletedAt = nil
+	})
+	if err != nil {
+		w.logger.Printf("history update failed job=%s stage=processing attempt_id=%s err=%v", jobID, attempt.ID, err)
+	}
+}
+
+func (w *Worker) markHistoryAttemptDone(jobID, outputKey, downloadURL string, expiresAt time.Time) {
+	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	attempt, err := w.historyStore.GetAttemptByJobID(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, history.ErrAttemptNotFound) {
+			return
+		}
+		w.logger.Printf("history update skipped job=%s stage=done err=%v", jobID, err)
+		return
+	}
+
+	now := time.Now().UTC()
+	updated, err := w.historyStore.UpdateAttempt(ctx, attempt.UserID, attempt.ID, func(a *history.Attempt) {
+		a.Status = history.StatusDone
+		a.OutputKey = strings.TrimSpace(outputKey)
+		a.DownloadURL = strings.TrimSpace(downloadURL)
+		if expiresAt.IsZero() {
+			a.ExpiresAt = nil
+		} else {
+			expires := expiresAt.UTC()
+			a.ExpiresAt = &expires
+		}
+		a.ErrorCode = ""
+		a.ErrorText = ""
+		a.CompletedAt = &now
+	})
+	if err != nil {
+		w.logger.Printf("history update failed job=%s stage=done attempt_id=%s err=%v", jobID, attempt.ID, err)
+		return
+	}
+
+	if err := w.historyStore.MarkItemSuccess(ctx, updated.UserID, updated.HistoryItemID, now); err != nil {
+		w.logger.Printf("history item success mark failed job=%s item_id=%s err=%v", jobID, updated.HistoryItemID, err)
+	}
+}
+
+func (w *Worker) markHistoryAttemptFailed(jobID string, rootErr error) {
+	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	attempt, err := w.historyStore.GetAttemptByJobID(ctx, jobID)
+	if err != nil {
+		if errors.Is(err, history.ErrAttemptNotFound) {
+			return
+		}
+		w.logger.Printf("history update skipped job=%s stage=failed err=%v", jobID, err)
+		return
+	}
+
+	now := time.Now().UTC()
+	_, err = w.historyStore.UpdateAttempt(ctx, attempt.UserID, attempt.ID, func(a *history.Attempt) {
+		a.Status = history.StatusFailed
+		a.ErrorCode = "mp3_conversion_failed"
+		a.ErrorText = clipError(rootErr)
+		a.CompletedAt = &now
+	})
+	if err != nil {
+		w.logger.Printf("history update failed job=%s stage=failed attempt_id=%s err=%v", jobID, attempt.ID, err)
+	}
 }
 
 func clipError(err error) string {

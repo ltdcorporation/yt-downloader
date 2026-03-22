@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/jobs"
 	"yt-downloader/backend/internal/queue"
 	"yt-downloader/backend/internal/storage"
@@ -24,6 +25,13 @@ type workerR2Client interface {
 	PresignDownloadURL(ctx context.Context, key string, expiresIn time.Duration) (string, time.Time, error)
 }
 
+type workerHistoryStore interface {
+	GetAttemptByJobID(ctx context.Context, jobID string) (history.Attempt, error)
+	UpdateAttempt(ctx context.Context, userID, attemptID string, mutate func(*history.Attempt)) (history.Attempt, error)
+	MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error
+	Close() error
+}
+
 type workerRunner interface {
 	Run(ctx context.Context) error
 }
@@ -33,11 +41,14 @@ var (
 	newJobStore    = func(cfg config.Config, logger *log.Logger) workerStore {
 		return jobs.NewStore(cfg, logger)
 	}
+	newHistoryStore = func(cfg config.Config, logger *log.Logger) workerHistoryStore {
+		return history.NewStore(cfg, logger)
+	}
 	newR2Client = func(ctx context.Context, cfg config.Config) (workerR2Client, error) {
 		return storage.NewR2Client(ctx, cfg)
 	}
-	newWorker = func(cfg config.Config, logger *log.Logger, store workerStore, r2 workerR2Client) workerRunner {
-		return queue.NewWorker(cfg, logger, store, r2)
+	newWorker = func(cfg config.Config, logger *log.Logger, store workerStore, r2 workerR2Client, historyStore workerHistoryStore) workerRunner {
+		return queue.NewWorker(cfg, logger, store, r2, historyStore)
 	}
 )
 
@@ -66,12 +77,19 @@ func run(cfg config.Config, logger *log.Logger) error {
 		}
 	}()
 
+	historyStore := newHistoryStore(cfg, logger)
+	defer func() {
+		if err := historyStore.Close(); err != nil {
+			logger.Printf("warning: close history store: %v", err)
+		}
+	}()
+
 	r2Client, err := newR2Client(context.Background(), cfg)
 	if err != nil {
 		logger.Printf("warning: r2 is not ready, mp3 jobs will fail until configured (%v)", err)
 	}
 
-	worker := newWorker(cfg, logger, jobStore, r2Client)
+	worker := newWorker(cfg, logger, jobStore, r2Client, historyStore)
 
 	logger.Printf("worker starting (redis=%s)", cfg.RedisAddr)
 	if err := worker.Run(context.Background()); err != nil {

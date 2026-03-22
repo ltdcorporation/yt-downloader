@@ -65,9 +65,11 @@ func (m *memoryBackend) UpsertItem(_ context.Context, item Item) (Item, error) {
 				t := item.LastSuccessAt.UTC()
 				existing.LastSuccessAt = &t
 			}
-			if item.AttemptCount > existing.AttemptCount {
-				existing.AttemptCount = item.AttemptCount
+			increment := item.AttemptCount
+			if increment <= 0 {
+				increment = 1
 			}
+			existing.AttemptCount += increment
 			existing.UpdatedAt = item.UpdatedAt
 			m.itemsByID[existing.ID] = copyItem(existing)
 			return copyItem(existing), nil
@@ -105,6 +107,22 @@ func (m *memoryBackend) SoftDeleteItem(_ context.Context, userID, itemID string,
 	item.UpdatedAt = t
 	m.itemsByID[itemID] = copyItem(item)
 	delete(m.activeItemByUserHash, buildUserHashKey(item.UserID, item.SourceURLHash))
+	return nil
+}
+
+func (m *memoryBackend) MarkItemSuccess(_ context.Context, userID, itemID string, succeededAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	item, ok := m.itemsByID[itemID]
+	if !ok || item.UserID != userID || item.DeletedAt != nil {
+		return ErrItemNotFound
+	}
+
+	t := succeededAt.UTC()
+	item.LastSuccessAt = &t
+	item.UpdatedAt = t
+	m.itemsByID[itemID] = copyItem(item)
 	return nil
 }
 

@@ -77,6 +77,17 @@ func TestMemoryBackend_AttemptLifecycle(t *testing.T) {
 		t.Fatalf("unexpected upsert item error: %v", err)
 	}
 
+	if err := backend.MarkItemSuccess(ctx, "user_1", "his_1", now.Add(30*time.Second)); err != nil {
+		t.Fatalf("unexpected mark item success error: %v", err)
+	}
+	itemAfterSuccess, err := backend.GetItemByID(ctx, "user_1", "his_1")
+	if err != nil {
+		t.Fatalf("unexpected get item after success error: %v", err)
+	}
+	if itemAfterSuccess.LastSuccessAt == nil {
+		t.Fatalf("expected last_success_at to be set")
+	}
+
 	attempt := Attempt{
 		ID:            "hat_1",
 		HistoryItemID: "his_1",

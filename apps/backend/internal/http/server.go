@@ -359,6 +359,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 
 	platform := s.detectPlatform(req.URL)
 	var title string
+	var thumbnail string
 	switch platform {
 	case "youtube":
 		res, err := s.resolver.Resolve(r.Context(), req.URL)
@@ -367,6 +368,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 	case "tiktok":
 		res, err := s.ttResolver.Resolve(r.Context(), req.URL)
 		if err != nil {
@@ -374,6 +376,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 	case "x":
 		res, err := s.xResolver.Resolve(r.Context(), req.URL)
 		if err != nil {
@@ -381,6 +384,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 	case "instagram":
 		res, err := s.igResolver.Resolve(r.Context(), req.URL)
 		if err != nil {
@@ -388,6 +392,7 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 	default:
 		writeError(w, http.StatusBadRequest, "unsupported platform")
 		return
@@ -402,6 +407,10 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 	jobID := "job_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	outputKey := buildMP3OutputKey(s.cfg.R2KeyPrefix, jobID)
 	now := time.Now().UTC()
+	bitrateKbps := s.cfg.MP3Bitrate
+	if bitrateKbps <= 0 {
+		bitrateKbps = 128
+	}
 
 	record := jobs.Record{
 		ID:         jobID,
@@ -419,16 +428,43 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	identity := s.optionalSessionIdentity(r)
+	var historyAttempt *history.Attempt
+	if identity != nil {
+		createdAttempt, ok := s.createHistoryAttempt(r.Context(), historyAttemptCreateParams{
+			UserID:       identity.User.ID,
+			Platform:     platform,
+			SourceURL:    sourceURL,
+			Title:        title,
+			ThumbnailURL: thumbnail,
+			RequestKind:  history.RequestKindMP3,
+			Status:       history.StatusQueued,
+			QualityLabel: fmt.Sprintf("%dkbps", bitrateKbps),
+			JobID:        jobID,
+			OutputKey:    outputKey,
+		})
+		if ok {
+			historyAttempt = createdAttempt
+		}
+	}
+
 	payload := queue.ConvertMP3Payload{
 		JobID:       jobID,
 		SourceURL:   sourceURL,
 		Headers:     headers,
 		UserAgent:   userAgent,
 		OutputKey:   outputKey,
-		BitrateKbps: s.cfg.MP3Bitrate,
+		BitrateKbps: bitrateKbps,
 	}
 	taskBytes, err := json.Marshal(payload)
 	if err != nil {
+		_, _ = s.jobStore.Update(r.Context(), jobID, func(item *jobs.Record) {
+			item.Status = jobs.StatusFailed
+			item.Error = "failed to encode job payload"
+		})
+		if historyAttempt != nil {
+			s.markHistoryAttemptFailed(historyAttempt, "queue_payload_encode_failed", err)
+		}
 		writeError(w, http.StatusInternalServerError, "failed to queue job")
 		return
 	}
@@ -446,6 +482,9 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 			item.Status = jobs.StatusFailed
 			item.Error = "failed to enqueue job"
 		})
+		if historyAttempt != nil {
+			s.markHistoryAttemptFailed(historyAttempt, "queue_enqueue_failed", err)
+		}
 		s.logger.Printf("failed to enqueue mp3 job id=%s err=%v", jobID, err)
 		writeError(w, http.StatusInternalServerError, "failed to queue job")
 		return
@@ -485,13 +524,19 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	type downloadableFormat struct {
+		ID        string
+		URL       string
+		Type      string
+		Quality   string
+		Filesize  int64
+		Thumbnail string
+	}
+
 	platform := s.detectPlatform(sourceURL)
 	var title string
-	var formats []struct {
-		ID   string
-		URL  string
-		Type string
-	}
+	var thumbnail string
+	formats := make([]downloadableFormat, 0, 16)
 
 	switch platform {
 	case "youtube":
@@ -501,12 +546,9 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 		for _, f := range res.Formats {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: f.ID, URL: f.URL, Type: f.Type})
+			formats = append(formats, downloadableFormat{ID: f.ID, URL: f.URL, Type: f.Type, Quality: f.Quality, Filesize: f.Filesize})
 		}
 	case "tiktok":
 		res, err := s.ttResolver.Resolve(r.Context(), sourceURL)
@@ -515,12 +557,9 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 		for _, f := range res.Formats {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: f.ID, URL: f.URL, Type: f.Type})
+			formats = append(formats, downloadableFormat{ID: f.ID, URL: f.URL, Type: f.Type, Quality: f.Quality, Filesize: f.Filesize})
 		}
 	case "x":
 		res, err := s.xResolver.Resolve(r.Context(), sourceURL)
@@ -529,19 +568,12 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 		for _, f := range res.Formats {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: f.ID, URL: f.URL, Type: f.Type})
+			formats = append(formats, downloadableFormat{ID: f.ID, URL: f.URL, Type: f.Type, Quality: f.Quality, Filesize: f.Filesize})
 		}
 		for _, m := range res.Medias {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: m.ID, URL: m.URL, Type: m.Type})
+			formats = append(formats, downloadableFormat{ID: m.ID, URL: m.URL, Type: m.Type, Quality: m.Quality, Thumbnail: m.Thumbnail})
 		}
 	case "instagram":
 		res, err := s.igResolver.Resolve(r.Context(), sourceURL)
@@ -550,85 +582,126 @@ func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		title = res.Title
+		thumbnail = res.Thumbnail
 		for _, f := range res.Formats {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: f.ID, URL: f.URL, Type: f.Type})
+			formats = append(formats, downloadableFormat{ID: f.ID, URL: f.URL, Type: f.Type, Quality: f.Quality, Filesize: f.Filesize})
 		}
-		// Also look into Medias (for carousel or single images)
 		for _, m := range res.Medias {
-			formats = append(formats, struct {
-				ID   string
-				URL  string
-				Type string
-			}{ID: m.ID, URL: m.URL, Type: m.Type})
+			formats = append(formats, downloadableFormat{ID: m.ID, URL: m.URL, Type: m.Type, Quality: m.Quality, Thumbnail: m.Thumbnail})
 		}
 	default:
 		writeError(w, http.StatusBadRequest, "unsupported platform")
 		return
 	}
 
+	identity := s.optionalSessionIdentity(r)
 	for _, format := range formats {
-		if format.ID == formatID {
-			if format.URL == "" {
-				writeError(w, http.StatusBadRequest, "selected format is unavailable")
-				return
-			}
+		if format.ID != formatID {
+			continue
+		}
 
-			// Force download by setting Content-Disposition
-			ext := "mp4"
-			contentType := "video/mp4"
-			if format.Type == "image" {
-				ext = "jpg"
-				contentType = "image/jpeg"
-			}
-
-			filename := "file." + ext
-			if strings.TrimSpace(title) != "" {
-				// Simple cleanup of title for filename
-				cleanTitle := strings.Map(func(r rune) rune {
-					if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-						return r
-					}
-					return '_'
-				}, title)
-				if cleanTitle != "" {
-					filename = cleanTitle + "." + ext
-				}
-			}
-			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
-			w.Header().Set("Content-Type", contentType)
-
-			// Proxy the stream
-			req, err := http.NewRequestWithContext(r.Context(), "GET", format.URL, nil)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "failed to create upstream request")
-				return
-			}
-
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				writeError(w, http.StatusBadGateway, "failed to fetch content from source")
-				return
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				writeError(w, http.StatusBadGateway, fmt.Sprintf("source returned status %d", resp.StatusCode))
-				return
-			}
-
-			if resp.ContentLength > 0 {
-				w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
-			}
-
-			_, _ = io.Copy(w, resp.Body)
+		if format.URL == "" {
+			writeError(w, http.StatusBadRequest, "selected format is unavailable")
 			return
 		}
+
+		requestKind := history.RequestKindMP4
+		ext := "mp4"
+		contentType := "video/mp4"
+		if strings.EqualFold(format.Type, "image") {
+			requestKind = history.RequestKindImage
+			ext = "jpg"
+			contentType = "image/jpeg"
+		}
+
+		var historyAttempt *history.Attempt
+		if identity != nil {
+			createdAttempt, ok := s.createHistoryAttempt(r.Context(), historyAttemptCreateParams{
+				UserID:       identity.User.ID,
+				Platform:     platform,
+				SourceURL:    sourceURL,
+				Title:        title,
+				ThumbnailURL: firstNonEmpty(format.Thumbnail, thumbnail),
+				RequestKind:  requestKind,
+				Status:       history.StatusProcessing,
+				FormatID:     format.ID,
+				QualityLabel: format.Quality,
+			})
+			if ok {
+				historyAttempt = createdAttempt
+			}
+		}
+
+		filename := "file." + ext
+		if strings.TrimSpace(title) != "" {
+			cleanTitle := strings.Map(func(r rune) rune {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+					return r
+				}
+				return '_'
+			}, title)
+			if cleanTitle != "" {
+				filename = cleanTitle + "." + ext
+			}
+		}
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		w.Header().Set("Content-Type", contentType)
+
+		upstreamReq, err := http.NewRequestWithContext(r.Context(), http.MethodGet, format.URL, nil)
+		if err != nil {
+			if historyAttempt != nil {
+				s.markHistoryAttemptFailed(historyAttempt, "upstream_request_create_failed", err)
+			}
+			writeError(w, http.StatusInternalServerError, "failed to create upstream request")
+			return
+		}
+		upstreamReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+		resp, err := http.DefaultClient.Do(upstreamReq)
+		if err != nil {
+			if historyAttempt != nil {
+				s.markHistoryAttemptFailed(historyAttempt, "upstream_fetch_failed", err)
+			}
+			writeError(w, http.StatusBadGateway, "failed to fetch content from source")
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			if historyAttempt != nil {
+				s.markHistoryAttemptFailed(historyAttempt, "upstream_bad_status", fmt.Errorf("source returned status %d", resp.StatusCode))
+			}
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("source returned status %d", resp.StatusCode))
+			return
+		}
+
+		if resp.ContentLength > 0 {
+			w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+		}
+
+		bytesWritten, copyErr := io.Copy(w, resp.Body)
+		if copyErr != nil {
+			if historyAttempt != nil {
+				s.markHistoryAttemptFailed(historyAttempt, "upstream_copy_failed", copyErr)
+			}
+			return
+		}
+
+		if historyAttempt != nil {
+			var sizeBytes *int64
+			if resp.ContentLength > 0 {
+				value := resp.ContentLength
+				sizeBytes = &value
+			} else if bytesWritten > 0 {
+				value := bytesWritten
+				sizeBytes = &value
+			} else if format.Filesize > 0 {
+				value := format.Filesize
+				sizeBytes = &value
+			}
+			s.markHistoryAttemptDone(historyAttempt, sizeBytes)
+		}
+		return
 	}
 
 	writeError(w, http.StatusBadRequest, "selected format is not available")

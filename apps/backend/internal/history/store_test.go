@@ -12,13 +12,14 @@ import (
 type fakeBackend struct {
 	readyErr error
 
-	upsertItemFn     func(ctx context.Context, item Item) (Item, error)
-	getItemByIDFn    func(ctx context.Context, userID, itemID string) (Item, error)
-	softDeleteItemFn func(ctx context.Context, userID, itemID string, deletedAt time.Time) error
-	createAttemptFn  func(ctx context.Context, attempt Attempt) error
-	updateAttemptFn  func(ctx context.Context, attempt Attempt) error
-	getAttemptByIDFn func(ctx context.Context, userID, attemptID string) (Attempt, error)
-	getByJobIDFn     func(ctx context.Context, jobID string) (Attempt, error)
+	upsertItemFn      func(ctx context.Context, item Item) (Item, error)
+	getItemByIDFn     func(ctx context.Context, userID, itemID string) (Item, error)
+	softDeleteItemFn  func(ctx context.Context, userID, itemID string, deletedAt time.Time) error
+	markItemSuccessFn func(ctx context.Context, userID, itemID string, succeededAt time.Time) error
+	createAttemptFn   func(ctx context.Context, attempt Attempt) error
+	updateAttemptFn   func(ctx context.Context, attempt Attempt) error
+	getAttemptByIDFn  func(ctx context.Context, userID, attemptID string) (Attempt, error)
+	getByJobIDFn      func(ctx context.Context, jobID string) (Attempt, error)
 
 	closeCalls int
 
@@ -53,6 +54,13 @@ func (f *fakeBackend) GetItemByID(ctx context.Context, userID, itemID string) (I
 func (f *fakeBackend) SoftDeleteItem(ctx context.Context, userID, itemID string, deletedAt time.Time) error {
 	if f.softDeleteItemFn != nil {
 		return f.softDeleteItemFn(ctx, userID, itemID, deletedAt)
+	}
+	return nil
+}
+
+func (f *fakeBackend) MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error {
+	if f.markItemSuccessFn != nil {
+		return f.markItemSuccessFn(ctx, userID, itemID, succeededAt)
 	}
 	return nil
 }
@@ -129,6 +137,30 @@ func TestStoreUpsertItem_ValidatesInputs(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected validation error for invalid platform")
+	}
+}
+
+func TestStoreMarkItemSuccess(t *testing.T) {
+	backend := &fakeBackend{}
+	store := &Store{backend: backend}
+
+	var gotUserID, gotItemID string
+	var gotAt time.Time
+	backend.markItemSuccessFn = func(_ context.Context, userID, itemID string, succeededAt time.Time) error {
+		gotUserID = userID
+		gotItemID = itemID
+		gotAt = succeededAt
+		return nil
+	}
+
+	if err := store.MarkItemSuccess(context.Background(), " user_1 ", " his_1 ", time.Time{}); err != nil {
+		t.Fatalf("unexpected mark success error: %v", err)
+	}
+	if gotUserID != "user_1" || gotItemID != "his_1" {
+		t.Fatalf("expected trimmed identifiers, got user=%q item=%q", gotUserID, gotItemID)
+	}
+	if gotAt.IsZero() {
+		t.Fatalf("expected succeededAt to be set")
 	}
 }
 

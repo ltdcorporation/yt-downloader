@@ -77,7 +77,7 @@ func (p *postgresBackend) UpsertItem(ctx context.Context, item Item) (Item, erro
 			END,
 			last_attempt_at = COALESCE(EXCLUDED.last_attempt_at, history_items.last_attempt_at),
 			last_success_at = COALESCE(EXCLUDED.last_success_at, history_items.last_success_at),
-			attempt_count = GREATEST(history_items.attempt_count, EXCLUDED.attempt_count),
+			attempt_count = history_items.attempt_count + CASE WHEN EXCLUDED.attempt_count > 0 THEN EXCLUDED.attempt_count ELSE 1 END,
 			updated_at = EXCLUDED.updated_at
 		RETURNING
 			id, user_id, platform, source_url, source_url_hash,
@@ -143,6 +143,30 @@ func (p *postgresBackend) SoftDeleteItem(ctx context.Context, userID, itemID str
 	`, itemID, userID, deletedAt.UTC())
 	if err != nil {
 		return fmt.Errorf("soft-delete history item: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return ErrItemNotFound
+	}
+	return nil
+}
+
+func (p *postgresBackend) MarkItemSuccess(ctx context.Context, userID, itemID string, succeededAt time.Time) error {
+	if err := p.ensureSchema(ctx); err != nil {
+		return err
+	}
+
+	result, err := p.db.ExecContext(ctx, `
+		UPDATE history_items
+		SET
+			last_success_at = CASE
+				WHEN last_success_at IS NULL OR last_success_at < $3 THEN $3
+				ELSE last_success_at
+			END,
+			updated_at = $3
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+	`, itemID, userID, succeededAt.UTC())
+	if err != nil {
+		return fmt.Errorf("mark history item success: %w", err)
 	}
 	if rows, _ := result.RowsAffected(); rows == 0 {
 		return ErrItemNotFound

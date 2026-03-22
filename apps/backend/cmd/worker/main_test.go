@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/jobs"
 )
 
@@ -23,6 +24,28 @@ func (f *fakeWorkerStore) Update(_ context.Context, _ string, _ func(*jobs.Recor
 }
 
 func (f *fakeWorkerStore) Close() error {
+	f.closeCalls++
+	return f.closeErr
+}
+
+type fakeWorkerHistoryStore struct {
+	closeErr   error
+	closeCalls int
+}
+
+func (f *fakeWorkerHistoryStore) GetAttemptByJobID(context.Context, string) (history.Attempt, error) {
+	return history.Attempt{}, history.ErrAttemptNotFound
+}
+
+func (f *fakeWorkerHistoryStore) UpdateAttempt(context.Context, string, string, func(*history.Attempt)) (history.Attempt, error) {
+	return history.Attempt{}, nil
+}
+
+func (f *fakeWorkerHistoryStore) MarkItemSuccess(context.Context, string, string, time.Time) error {
+	return nil
+}
+
+func (f *fakeWorkerHistoryStore) Close() error {
 	f.closeCalls++
 	return f.closeErr
 }
@@ -52,12 +75,14 @@ func withWorkerTestOverrides(t *testing.T) {
 
 	oldLookPath := workerLookPath
 	oldStoreFactory := newJobStore
+	oldHistoryStoreFactory := newHistoryStore
 	oldR2Factory := newR2Client
 	oldWorkerFactory := newWorker
 
 	t.Cleanup(func() {
 		workerLookPath = oldLookPath
 		newJobStore = oldStoreFactory
+		newHistoryStore = oldHistoryStoreFactory
 		newR2Client = oldR2Factory
 		newWorker = oldWorkerFactory
 	})
@@ -95,6 +120,7 @@ func TestRun_SuccessWithFFmpegWarningAndR2Warning(t *testing.T) {
 	}
 
 	store := &fakeWorkerStore{closeErr: errors.New("close failed")}
+	historyStore := &fakeWorkerHistoryStore{}
 	runner := &fakeRunner{}
 	capturedBinary := ""
 	capturedR2Nil := false
@@ -102,10 +128,13 @@ func TestRun_SuccessWithFFmpegWarningAndR2Warning(t *testing.T) {
 		capturedBinary = cfg.YTDLPBinary
 		return store
 	}
+	newHistoryStore = func(config.Config, *log.Logger) workerHistoryStore {
+		return historyStore
+	}
 	newR2Client = func(context.Context, config.Config) (workerR2Client, error) {
 		return nil, errors.New("r2 not configured")
 	}
-	newWorker = func(_ config.Config, _ *log.Logger, _ workerStore, r2 workerR2Client) workerRunner {
+	newWorker = func(_ config.Config, _ *log.Logger, _ workerStore, r2 workerR2Client, _ workerHistoryStore) workerRunner {
 		capturedR2Nil = r2 == nil
 		return runner
 	}
@@ -127,6 +156,9 @@ func TestRun_SuccessWithFFmpegWarningAndR2Warning(t *testing.T) {
 	if store.closeCalls != 1 {
 		t.Fatalf("expected store close called once, got %d", store.closeCalls)
 	}
+	if historyStore.closeCalls != 1 {
+		t.Fatalf("expected history store close called once, got %d", historyStore.closeCalls)
+	}
 }
 
 func TestRun_WorkerErrorWrapped(t *testing.T) {
@@ -144,14 +176,18 @@ func TestRun_WorkerErrorWrapped(t *testing.T) {
 	}
 
 	store := &fakeWorkerStore{}
+	historyStore := &fakeWorkerHistoryStore{}
 	runner := &fakeRunner{runErr: errors.New("worker crashed")}
 	newJobStore = func(config.Config, *log.Logger) workerStore {
 		return store
 	}
+	newHistoryStore = func(config.Config, *log.Logger) workerHistoryStore {
+		return historyStore
+	}
 	newR2Client = func(context.Context, config.Config) (workerR2Client, error) {
 		return fakeWorkerR2{}, nil
 	}
-	newWorker = func(_ config.Config, _ *log.Logger, _ workerStore, _ workerR2Client) workerRunner {
+	newWorker = func(_ config.Config, _ *log.Logger, _ workerStore, _ workerR2Client, _ workerHistoryStore) workerRunner {
 		return runner
 	}
 
@@ -165,5 +201,8 @@ func TestRun_WorkerErrorWrapped(t *testing.T) {
 	}
 	if store.closeCalls != 1 {
 		t.Fatalf("expected store close called even on worker error, got %d", store.closeCalls)
+	}
+	if historyStore.closeCalls != 1 {
+		t.Fatalf("expected history store close called even on worker error, got %d", historyStore.closeCalls)
 	}
 }

@@ -43,7 +43,7 @@ func TestPostgresBackendIntegration_ItemLifecycle(t *testing.T) {
 		SourceURL:     "https://www.youtube.com/watch?v=abc123",
 		SourceURLHash: "hash_abc123",
 		Title:         "Video One Updated",
-		AttemptCount:  5,
+		AttemptCount:  1,
 		CreatedAt:     now.Add(time.Minute),
 		UpdatedAt:     now.Add(time.Minute),
 	})
@@ -53,8 +53,8 @@ func TestPostgresBackendIntegration_ItemLifecycle(t *testing.T) {
 	if upsertedAgain.ID != item.ID {
 		t.Fatalf("expected same item id on hash conflict, got %s", upsertedAgain.ID)
 	}
-	if upsertedAgain.AttemptCount != 5 {
-		t.Fatalf("expected attempt_count 5, got %d", upsertedAgain.AttemptCount)
+	if upsertedAgain.AttemptCount != 2 {
+		t.Fatalf("expected attempt_count 2, got %d", upsertedAgain.AttemptCount)
 	}
 
 	got, err := backend.GetItemByID(ctx, "user_1", item.ID)
@@ -160,6 +160,18 @@ func TestPostgresBackendIntegration_AttemptLifecycle(t *testing.T) {
 	}
 	if afterUpdate.ExpiresAt == nil || !afterUpdate.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expected expires_at %v, got %+v", expiresAt, afterUpdate.ExpiresAt)
+	}
+
+	successAt := now.Add(5 * time.Minute)
+	if err := backend.MarkItemSuccess(ctx, "user_1", item.ID, successAt); err != nil {
+		t.Fatalf("unexpected mark item success error: %v", err)
+	}
+	itemAfterSuccess, err := backend.GetItemByID(ctx, "user_1", item.ID)
+	if err != nil {
+		t.Fatalf("unexpected get item after success error: %v", err)
+	}
+	if itemAfterSuccess.LastSuccessAt == nil || !itemAfterSuccess.LastSuccessAt.Equal(successAt) {
+		t.Fatalf("expected last_success_at %v, got %+v", successAt, itemAfterSuccess.LastSuccessAt)
 	}
 
 	duplicate := attempt
