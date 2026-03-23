@@ -187,6 +187,52 @@ func (s *Server) handleHistoryStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type historyCreateRequest struct {
+	URL          string `json:"url"`
+	Platform     string `json:"platform"`
+	Title        string `json:"title"`
+	ThumbnailURL string `json:"thumbnail_url"`
+}
+
+func (s *Server) handleHistoryCreate(w http.ResponseWriter, r *http.Request) {
+	if s.historyStore == nil {
+		writeHistoryError(w, http.StatusServiceUnavailable, "history service unavailable", "history_unavailable")
+		return
+	}
+
+	identity, ok := s.requireSessionIdentity(w, r)
+	if !ok {
+		return
+	}
+
+	var req historyCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeHistoryError(w, http.StatusBadRequest, "invalid JSON body", "history_invalid_request")
+		return
+	}
+
+	if strings.TrimSpace(req.URL) == "" {
+		writeHistoryError(w, http.StatusBadRequest, "url is required", "history_invalid_request")
+		return
+	}
+
+	_, ok = s.createHistoryAttempt(r.Context(), historyAttemptCreateParams{
+		UserID:       identity.User.ID,
+		Platform:     req.Platform,
+		SourceURL:    req.URL,
+		Title:        req.Title,
+		ThumbnailURL: req.ThumbnailURL,
+		RequestKind:  history.RequestKindMP4, // Default to MP4
+		Status:       history.StatusResolved,
+	})
+	if !ok {
+		writeHistoryError(w, http.StatusInternalServerError, "failed to create history entry", "history_unavailable")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true})
+}
+
 func (s *Server) handleHistoryDelete(w http.ResponseWriter, r *http.Request) {
 	if s.historyStore == nil {
 		writeHistoryError(w, http.StatusServiceUnavailable, "history service unavailable", "history_unavailable")
@@ -408,7 +454,7 @@ func resolveRedownloadKind(raw string, fallback history.RequestKind) (history.Re
 
 func isHistoryStatusFilterSupported(status history.AttemptStatus) bool {
 	switch status {
-	case history.StatusQueued, history.StatusProcessing, history.StatusDone, history.StatusFailed, history.StatusExpired:
+	case history.StatusResolved, history.StatusQueued, history.StatusProcessing, history.StatusDone, history.StatusFailed, history.StatusExpired:
 		return true
 	default:
 		return false

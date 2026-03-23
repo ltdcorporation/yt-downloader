@@ -15,8 +15,10 @@ import DownloadModal from "./DownloadModal";
 import ProcessingModal from "./ProcessingModal";
 import { api, APIError, type ResolveResponse } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
+import { useAuthStore } from "@/store";
 
 export default function InputBar() {
+  const { currentUser } = useAuthStore();
   const [url, setUrl] = useState("");
   const [resolvedUrl, setResolvedUrl] = useState("");
   const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(
@@ -94,6 +96,20 @@ export default function InputBar() {
       const result = await api.resolve(targetUrl);
       setResolvedUrl(targetUrl);
       setResolveResult(result);
+
+      // Save to history if user is logged in
+      if (currentUser) {
+        api
+          .historyCreate({
+            url: targetUrl,
+            platform: detectPlatform(targetUrl),
+            title: result.title,
+            thumbnail_url: result.thumbnail,
+          })
+          .catch((err) => {
+            console.error("Failed to save history:", err);
+          });
+      }
 
       // Show DownloadModal for all supported platforms
       setIsModalOpen(true);

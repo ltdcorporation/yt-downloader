@@ -28,6 +28,7 @@ const (
 )
 
 const (
+	StatusResolved   AttemptStatus = "resolved"
 	StatusQueued     AttemptStatus = "queued"
 	StatusProcessing AttemptStatus = "processing"
 	StatusDone       AttemptStatus = "done"
@@ -469,7 +470,7 @@ func isValidRequestKind(kind RequestKind) bool {
 
 func isValidAttemptStatus(status AttemptStatus) bool {
 	switch status {
-	case StatusQueued, StatusProcessing, StatusDone, StatusFailed, StatusExpired:
+	case StatusResolved, StatusQueued, StatusProcessing, StatusDone, StatusFailed, StatusExpired:
 		return true
 	default:
 		return false

@@ -211,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/v1/auth/me", s.handleAuthMe)
 	r.Post("/v1/auth/logout", s.handleAuthLogout)
 	r.Get("/v1/history", s.handleHistoryList)
+	r.Post("/v1/history", s.handleHistoryCreate)
 	r.Get("/v1/history/stats", s.handleHistoryStats)
 	r.Post("/v1/history/{id}/redownload", s.handleHistoryRedownload)
 	r.Delete("/v1/history/{id}", s.handleHistoryDelete)

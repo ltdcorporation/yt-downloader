@@ -5,6 +5,7 @@ export type HistoryTabPlatform = "all" | HistoryPlatform;
 export type HistoryRequestKind = "mp3" | "mp4" | "image";
 
 export type HistoryAttemptStatus =
+  | "resolved"
   | "queued"
   | "processing"
   | "done"
