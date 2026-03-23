@@ -161,7 +161,7 @@ func (r *Resolver) Resolve(ctx context.Context, rawURL string) (ResolveResult, e
 }
 
 func (r *Resolver) resolveWithCandidate(ctx context.Context, targetURL string, headers map[string]string, userAgent string, candidate cookieCandidate) (ResolveResult, error) {
-	cmdCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	args := []string{

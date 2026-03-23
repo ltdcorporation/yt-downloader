@@ -101,7 +101,7 @@ func (r *Resolver) Resolve(ctx context.Context, rawURL string) (ResolveResult, e
 		return ResolveResult{}, err
 	}
 
-	cmdCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	cmdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	args := []string{
