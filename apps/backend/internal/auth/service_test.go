@@ -398,6 +398,54 @@ func TestGenerateSessionTokenAndHash(t *testing.T) {
 	}
 }
 
+func TestService_UpdateProfile(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	store := &Store{backend: &fakeBackend{
+		updateUserFullNameFn: func(_ context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected userID: %s", userID)
+			}
+			if fullName != "Updated User" {
+				t.Fatalf("unexpected full name: %s", fullName)
+			}
+			if !updatedAt.Equal(now) {
+				t.Fatalf("unexpected updatedAt: %s", updatedAt)
+			}
+			return User{ID: userID, FullName: fullName, Email: "user@example.com", CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt}, nil
+		},
+	}}
+
+	svc := NewService(store, Options{})
+	svc.now = func() time.Time { return now }
+
+	updated, err := svc.UpdateProfile(ctx, "usr_1", UpdateProfileInput{FullName: "  Updated   User  "})
+	if err != nil {
+		t.Fatalf("UpdateProfile failed: %v", err)
+	}
+	if updated.FullName != "Updated User" {
+		t.Fatalf("unexpected normalized full name: %q", updated.FullName)
+	}
+	if updated.Email != "user@example.com" {
+		t.Fatalf("unexpected email in updated profile: %q", updated.Email)
+	}
+
+	if _, err := svc.UpdateProfile(ctx, "usr_1", UpdateProfileInput{FullName: "A"}); err == nil {
+		t.Fatalf("expected validation error for short full name")
+	}
+
+	store = &Store{backend: &fakeBackend{
+		updateUserFullNameFn: func(context.Context, string, string, time.Time) (User, error) {
+			return User{}, ErrUserNotFound
+		},
+	}}
+	svc = NewService(store, Options{})
+	if _, err := svc.UpdateProfile(ctx, "usr_missing", UpdateProfileInput{FullName: "Valid Name"}); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound, got %v", err)
+	}
+}
+
 func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -413,6 +461,9 @@ func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	}
 	if err := nilService.Logout(ctx, "token"); err == nil {
 		t.Fatalf("expected nil service logout error")
+	}
+	if _, err := nilService.UpdateProfile(ctx, "usr", UpdateProfileInput{FullName: "Valid Name"}); err == nil {
+		t.Fatalf("expected nil service update profile error")
 	}
 
 	svc := newTestService(t, Options{})

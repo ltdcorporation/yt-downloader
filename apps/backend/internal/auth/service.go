@@ -94,6 +94,10 @@ type GoogleLoginInput struct {
 	UserAgent    string
 }
 
+type UpdateProfileInput struct {
+	FullName string
+}
+
 type Service struct {
 	store *Store
 	now   func() time.Time
@@ -396,6 +400,34 @@ func (s *Service) Logout(ctx context.Context, rawToken string) error {
 		return nil
 	}
 	return err
+}
+
+func (s *Service) UpdateProfile(ctx context.Context, userID string, input UpdateProfileInput) (PublicUser, error) {
+	if s == nil || s.store == nil {
+		return PublicUser{}, errors.New("auth service is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return PublicUser{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	fullName, err := normalizeFullName(input.FullName)
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	user, err := s.store.UpdateUserFullName(ctx, trimmedUserID, fullName, s.now())
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	return PublicUser{
+		ID:        user.ID,
+		FullName:  user.FullName,
+		Email:     user.Email,
+		CreatedAt: user.CreatedAt,
+	}, nil
 }
 
 func (s *Service) issueSessionForUser(ctx context.Context, user User, keepLoggedIn bool, clientIP, userAgent string) (AuthResult, error) {

@@ -1,44 +1,253 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store";
-import { api } from "@/lib/api";
+import {
+  api,
+  APIError,
+  type SettingsPatchRequest,
+  type SettingsSnapshotResponse,
+} from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import SettingsProfile from "@/components/settings/SettingsProfile";
 import SettingsPreferences from "@/components/settings/SettingsPreferences";
 import SettingsNotifications from "@/components/settings/SettingsNotifications";
 import {
-  DEFAULT_SETTINGS,
+  DEFAULT_AVATAR_URL,
+  buildDefaultSettingsFormData,
+  fromNotificationPreferences,
+  toNotificationPreferences,
   type SettingsFormData,
+  type UserProfile,
 } from "@/data/settings-data";
 
+interface ServerSnapshot {
+  profile: {
+    fullName: string;
+    email: string;
+  };
+  settings: SettingsFormData;
+  version: number;
+  updatedAt: string;
+}
+
+function cloneFormData(input: SettingsFormData): SettingsFormData {
+  return {
+    ...input,
+    emailAlerts: input.emailAlerts.map((alert) => ({ ...alert })),
+  };
+}
+
+function mapSettingsToForm(response: SettingsSnapshotResponse): SettingsFormData {
+  return {
+    defaultQuality: response.settings.preferences.default_quality,
+    autoTrimSilence: response.settings.preferences.auto_trim_silence,
+    thumbnailGeneration: response.settings.preferences.thumbnail_generation,
+    emailAlerts: toNotificationPreferences(response.settings.notifications.email),
+  };
+}
+
+function buildSettingsPatchPayload(
+  draft: SettingsFormData,
+  baseline: SettingsFormData,
+  version: number,
+): SettingsPatchRequest | null {
+  const preferencesPatch: {
+    default_quality?: SettingsFormData["defaultQuality"];
+    auto_trim_silence?: boolean;
+    thumbnail_generation?: boolean;
+  } = {};
+
+  if (draft.defaultQuality !== baseline.defaultQuality) {
+    preferencesPatch.default_quality = draft.defaultQuality;
+  }
+  if (draft.autoTrimSilence !== baseline.autoTrimSilence) {
+    preferencesPatch.auto_trim_silence = draft.autoTrimSilence;
+  }
+  if (draft.thumbnailGeneration !== baseline.thumbnailGeneration) {
+    preferencesPatch.thumbnail_generation = draft.thumbnailGeneration;
+  }
+
+  const draftAlerts = fromNotificationPreferences(draft.emailAlerts);
+  const baselineAlerts = fromNotificationPreferences(baseline.emailAlerts);
+  const emailNotificationsPatch: {
+    processing?: boolean;
+    storage?: boolean;
+    summary?: boolean;
+  } = {};
+
+  if (draftAlerts.processing !== baselineAlerts.processing) {
+    emailNotificationsPatch.processing = draftAlerts.processing;
+  }
+  if (draftAlerts.storage !== baselineAlerts.storage) {
+    emailNotificationsPatch.storage = draftAlerts.storage;
+  }
+  if (draftAlerts.summary !== baselineAlerts.summary) {
+    emailNotificationsPatch.summary = draftAlerts.summary;
+  }
+
+  const settingsPatch: SettingsPatchRequest["settings"] = {};
+  if (Object.keys(preferencesPatch).length > 0) {
+    settingsPatch.preferences = preferencesPatch;
+  }
+  if (Object.keys(emailNotificationsPatch).length > 0) {
+    settingsPatch.notifications = {
+      email: emailNotificationsPatch,
+    };
+  }
+
+  if (Object.keys(settingsPatch).length === 0) {
+    return null;
+  }
+
+  return {
+    settings: settingsPatch,
+    meta: {
+      version,
+    },
+  };
+}
+
 export default function SettingsPage() {
-  const { currentUser, logout, isAuthChecking } = useAuthStore();
+  const {
+    currentUser,
+    logout,
+    isAuthChecking,
+    setCurrentUser,
+    setIsAuthChecking,
+  } = useAuthStore();
   const router = useRouter();
 
-  const [formData, setFormData] = useState<SettingsFormData>(DEFAULT_SETTINGS);
+  const [profileFullName, setProfileFullName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [formData, setFormData] = useState<SettingsFormData>(
+    buildDefaultSettingsFormData(),
+  );
+  const [settingsVersion, setSettingsVersion] = useState<number>(1);
+  const [serverSnapshot, setServerSnapshot] = useState<ServerSnapshot | null>(
+    null,
+  );
+
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+  const [conflictNotice, setConflictNotice] = useState("");
+
+  const isDirty = useMemo(() => {
+    if (!serverSnapshot) {
+      return false;
+    }
+
+    if (profileFullName !== serverSnapshot.profile.fullName) {
+      return true;
+    }
+
+    const draft = JSON.stringify(formData);
+    const baseline = JSON.stringify(serverSnapshot.settings);
+    return draft !== baseline;
+  }, [formData, profileFullName, serverSnapshot]);
+
+  const refreshAuthState = useCallback(async () => {
+    try {
+      const me = await api.me();
+      setCurrentUser(me.user);
+    } catch (error) {
+      if (error instanceof APIError && error.code === "invalid_session") {
+        // Session snapshot cleanup happens in navbar flow; keep store state aligned.
+      }
+      setCurrentUser(null);
+    } finally {
+      setIsAuthChecking(false);
+    }
+  }, [setCurrentUser, setIsAuthChecking]);
 
   useEffect(() => {
-    if (currentUser) {
-      setFormData((prev) => ({
-        ...prev,
-        fullName: currentUser.full_name,
-        email: currentUser.email,
-      }));
-    } else if (!isAuthChecking) {
-      router.push("/");
+    if (isAuthChecking) {
+      void refreshAuthState();
     }
-  }, [currentUser, isAuthChecking, router]);
+  }, [isAuthChecking, refreshAuthState]);
 
-  const handleFullNameChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, fullName: value }));
-  };
+  const loadSettings = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
 
-  const handleEmailChange = (value: string) => {
-    setFormData((prev) => ({ ...prev, email: value }));
-  };
+    setIsPageLoading(true);
+    setLoadError("");
+
+    try {
+      const [profileResponse, settingsResponse] = await Promise.all([
+        api.profile(),
+        api.getSettings(),
+      ]);
+
+      const nextFormData = mapSettingsToForm(settingsResponse);
+      const nextSnapshot: ServerSnapshot = {
+        profile: {
+          fullName: profileResponse.profile.full_name,
+          email: profileResponse.profile.email,
+        },
+        settings: cloneFormData(nextFormData),
+        version: settingsResponse.meta.version,
+        updatedAt: settingsResponse.meta.updated_at,
+      };
+
+      setProfileFullName(nextSnapshot.profile.fullName);
+      setProfileEmail(nextSnapshot.profile.email);
+      setFormData(nextFormData);
+      setSettingsVersion(nextSnapshot.version);
+      setServerSnapshot(nextSnapshot);
+      setConflictNotice("");
+    } catch (error) {
+      if (
+        error instanceof APIError &&
+        (error.code === "invalid_session" || error.code === "session_expired")
+      ) {
+        setCurrentUser(null);
+        router.push("/");
+        return;
+      }
+
+      setLoadError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load settings. Please refresh and try again.",
+      );
+    } finally {
+      setIsPageLoading(false);
+    }
+  }, [currentUser, router, setCurrentUser]);
+
+  useEffect(() => {
+    if (!isAuthChecking && !currentUser) {
+      router.push("/");
+      return;
+    }
+
+    if (currentUser) {
+      void loadSettings();
+    }
+  }, [currentUser, isAuthChecking, loadSettings, router]);
+
+  useEffect(() => {
+    if (!isDirty) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   const handleQualityChange = (value: SettingsFormData["defaultQuality"]) => {
     setFormData((prev) => ({ ...prev, defaultQuality: value }));
@@ -56,18 +265,95 @@ export default function SettingsPage() {
     setFormData((prev) => ({
       ...prev,
       emailAlerts: prev.emailAlerts.map((alert) =>
-        alert.id === id ? { ...alert, checked } : alert
+        alert.id === id ? { ...alert, checked } : alert,
       ),
     }));
   };
 
-  const handleSave = () => {
-    console.log("Saving settings:", formData);
-    // TODO: Implement API call to save settings
+  const handleDiscard = () => {
+    if (!serverSnapshot) {
+      return;
+    }
+
+    setProfileFullName(serverSnapshot.profile.fullName);
+    setProfileEmail(serverSnapshot.profile.email);
+    setFormData(cloneFormData(serverSnapshot.settings));
+    setSettingsVersion(serverSnapshot.version);
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
   };
 
-  const handleDiscard = () => {
-    setFormData(DEFAULT_SETTINGS);
+  const handleSave = async () => {
+    if (!serverSnapshot || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+
+    try {
+      let finalFullName = profileFullName;
+      let finalEmail = profileEmail;
+
+      if (profileFullName !== serverSnapshot.profile.fullName) {
+        const profileResponse = await api.updateProfile({
+          fullName: profileFullName,
+        });
+        finalFullName = profileResponse.profile.full_name;
+        finalEmail = profileResponse.profile.email;
+        setCurrentUser(profileResponse.profile);
+      }
+
+      const settingsPatch = buildSettingsPatchPayload(
+        formData,
+        serverSnapshot.settings,
+        settingsVersion,
+      );
+
+      let finalSettings = cloneFormData(formData);
+      let finalVersion = settingsVersion;
+      let finalUpdatedAt = serverSnapshot.updatedAt;
+
+      if (settingsPatch) {
+        const settingsResponse = await api.updateSettings(settingsPatch);
+        finalSettings = mapSettingsToForm(settingsResponse);
+        finalVersion = settingsResponse.meta.version;
+        finalUpdatedAt = settingsResponse.meta.updated_at;
+      }
+
+      const nextSnapshot: ServerSnapshot = {
+        profile: {
+          fullName: finalFullName,
+          email: finalEmail,
+        },
+        settings: cloneFormData(finalSettings),
+        version: finalVersion,
+        updatedAt: finalUpdatedAt,
+      };
+
+      setProfileFullName(finalFullName);
+      setProfileEmail(finalEmail);
+      setFormData(finalSettings);
+      setSettingsVersion(finalVersion);
+      setServerSnapshot(nextSnapshot);
+      setSaveSuccess("Settings saved successfully.");
+    } catch (error) {
+      if (error instanceof APIError && error.code === "settings_version_conflict") {
+        setConflictNotice(
+          "Your settings were updated from another session. Reload latest data, review changes, then save again.",
+        );
+      }
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save settings. Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -80,7 +366,7 @@ export default function SettingsPage() {
     router.push("/");
   };
 
-  if (isAuthChecking) {
+  if (isAuthChecking || isPageLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -89,14 +375,21 @@ export default function SettingsPage() {
   }
 
   if (!currentUser) {
-    return null; // Will redirect via useEffect
+    return null;
   }
 
-  const userProfile = {
-    name: currentUser.full_name,
-    email: currentUser.email,
+  const effectiveUserName = profileFullName || currentUser.full_name;
+  const effectiveUserEmail = profileEmail || currentUser.email;
+
+  const userProfile: UserProfile = {
+    name: effectiveUserName,
+    email: effectiveUserEmail,
     plan: "Free Plan",
-    avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.full_name)}&background=random`,
+    avatar: effectiveUserName
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(
+          effectiveUserName,
+        )}&background=random`
+      : DEFAULT_AVATAR_URL,
   };
 
   return (
@@ -104,13 +397,37 @@ export default function SettingsPage() {
       <SettingsSidebar user={userProfile} onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
         <SettingsHeader />
-        <div className="max-w-4xl px-8 pb-12 space-y-8">
+        <div className="max-w-4xl px-8 pb-12 space-y-6">
+          {loadError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+              {loadError}
+            </div>
+          ) : null}
+
+          {conflictNotice ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              {conflictNotice}
+            </div>
+          ) : null}
+
+          {saveError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+              {saveError}
+            </div>
+          ) : null}
+
+          {saveSuccess ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
+              {saveSuccess}
+            </div>
+          ) : null}
+
           <SettingsProfile
             user={userProfile}
-            fullName={formData.fullName}
-            email={formData.email}
-            onFullNameChange={handleFullNameChange}
-            onEmailChange={handleEmailChange}
+            fullName={profileFullName}
+            email={profileEmail}
+            onFullNameChange={setProfileFullName}
+            emailReadOnly
           />
           <SettingsPreferences
             defaultQuality={formData.defaultQuality}
@@ -127,15 +444,17 @@ export default function SettingsPage() {
           <div className="flex items-center justify-end gap-3 pt-4">
             <button
               onClick={handleDiscard}
-              className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+              disabled={!isDirty || isSaving}
+              className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-slate-100 transition-colors"
             >
               Discard Changes
             </button>
             <button
               onClick={handleSave}
-              className="px-8 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all"
+              disabled={!isDirty || isSaving}
+              className="px-8 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 transition-all"
             >
-              Save Preferences
+              {isSaving ? "Saving..." : "Save Preferences"}
             </button>
           </div>
         </div>

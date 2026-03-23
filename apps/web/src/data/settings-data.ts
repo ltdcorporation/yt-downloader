@@ -5,40 +5,35 @@ export interface UserProfile {
   plan: string;
 }
 
+export type DefaultQuality = "4k" | "1080p" | "720p" | "480p";
+export type NotificationPreferenceID = "processing" | "storage" | "summary";
+
 export interface NotificationPreference {
-  id: string;
+  id: NotificationPreferenceID;
   label: string;
   checked: boolean;
 }
 
 export interface SettingsFormData {
-  fullName: string;
-  email: string;
-  defaultQuality: "4k" | "1080p" | "720p" | "480p";
+  defaultQuality: DefaultQuality;
   autoTrimSilence: boolean;
   thumbnailGeneration: boolean;
   emailAlerts: NotificationPreference[];
 }
 
-export const SAMPLE_USER: UserProfile = {
-  name: "Alex Johnson",
-  email: "alex.johnson@example.com",
-  avatar:
-    "https://lh3.googleusercontent.com/aida-public/AB6AXuANDr4_pSbk5fjDd0HDrsZfvTjJZFjhn7FCp25AvDMb0TVC-6H5afnfzzYbSxpbcIJ7zoyvevJR2yAqyZUeeBE2e6ZjC2sugHkEvQCj2EBXoblXae1C1PeFlX2S_Vb5fjHY8oW3g_QkBJNlfLqjl_jPcHbhY6m2uIzle82n5OwsDEPV0jr1cdq1SJ4a4G-DT8j8YNlJpevBUBuVKfWm5d_Q4tmGPpDnt1baTHduUY4ynVRR4OG3YlEWIqzNtMLthmVoSEkfILJ1",
-  plan: "Pro Plan",
-};
+export interface EmailAlertSettings {
+  processing: boolean;
+  storage: boolean;
+  summary: boolean;
+}
 
-export const DEFAULT_SETTINGS: SettingsFormData = {
-  fullName: "Alex Johnson",
-  email: "alex.johnson@example.com",
-  defaultQuality: "1080p",
-  autoTrimSilence: true,
-  thumbnailGeneration: false,
-  emailAlerts: [
-    { id: "processing", label: "Processing completed successfully", checked: true },
-    { id: "storage", label: "Low storage warnings", checked: true },
-    { id: "summary", label: "Monthly summary report", checked: false },
-  ],
+export const DEFAULT_AVATAR_URL =
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuANDr4_pSbk5fjDd0HDrsZfvTjJZFjhn7FCp25AvDMb0TVC-6H5afnfzzYbSxpbcIJ7zoyvevJR2yAqyZUeeBE2e6ZjC2sugHkEvQCj2EBXoblXae1C1PeFlX2S_Vb5fjHY8oW3g_QkBJNlfLqjl_jPcHbhY6m2uIzle82n5OwsDEPV0jr1cdq1SJ4a4G-DT8j8YNlJpevBUBuVKfWm5d_Q4tmGPpDnt1baTHduUY4ynVRR4OG3YlEWIqzNtMLthmVoSEkfILJ1";
+
+export const ALERT_LABELS: Record<NotificationPreferenceID, string> = {
+  processing: "Processing completed successfully",
+  storage: "Low storage warnings",
+  summary: "Monthly summary report",
 };
 
 export const QUALITY_OPTIONS = [
@@ -47,3 +42,60 @@ export const QUALITY_OPTIONS = [
   { value: "720p", label: "720p (HD)" },
   { value: "480p", label: "480p (Standard)" },
 ] as const;
+
+export function toNotificationPreferences(
+  emailAlerts: EmailAlertSettings,
+): NotificationPreference[] {
+  return [
+    {
+      id: "processing",
+      label: ALERT_LABELS.processing,
+      checked: emailAlerts.processing,
+    },
+    {
+      id: "storage",
+      label: ALERT_LABELS.storage,
+      checked: emailAlerts.storage,
+    },
+    {
+      id: "summary",
+      label: ALERT_LABELS.summary,
+      checked: emailAlerts.summary,
+    },
+  ];
+}
+
+export function fromNotificationPreferences(
+  alerts: NotificationPreference[],
+): EmailAlertSettings {
+  const byID = alerts.reduce<Record<NotificationPreferenceID, boolean>>(
+    (acc, alert) => {
+      acc[alert.id] = alert.checked;
+      return acc;
+    },
+    {
+      processing: true,
+      storage: true,
+      summary: false,
+    },
+  );
+
+  return {
+    processing: byID.processing,
+    storage: byID.storage,
+    summary: byID.summary,
+  };
+}
+
+export function buildDefaultSettingsFormData(): SettingsFormData {
+  return {
+    defaultQuality: "1080p",
+    autoTrimSilence: false,
+    thumbnailGeneration: false,
+    emailAlerts: toNotificationPreferences({
+      processing: true,
+      storage: true,
+      summary: false,
+    }),
+  };
+}

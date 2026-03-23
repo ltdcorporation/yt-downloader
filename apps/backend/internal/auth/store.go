@@ -63,6 +63,7 @@ type backend interface {
 	CreateUserSessionAndGoogleIdentity(ctx context.Context, user User, session Session, identity GoogleIdentity) error
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, userID string) (User, error)
+	UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
@@ -134,6 +135,24 @@ func (s *Store) GetUserByID(ctx context.Context, userID string) (User, error) {
 		return User{}, errors.New("auth store is not initialized")
 	}
 	return s.backend.GetUserByID(ctx, strings.TrimSpace(userID))
+}
+
+func (s *Store) UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedFullName := strings.TrimSpace(fullName)
+	if trimmedUserID == "" {
+		return User{}, &ValidationError{Message: "user_id is required"}
+	}
+	if trimmedFullName == "" {
+		return User{}, &ValidationError{Message: "full_name is required"}
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	return s.backend.UpdateUserFullName(ctx, trimmedUserID, trimmedFullName, updatedAt.UTC())
 }
 
 func (s *Store) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {

@@ -104,6 +104,10 @@ POST /v1/auth/login         { email, password, keep_logged_in? }
 POST /v1/auth/google        { id_token, keep_logged_in? }
 GET  /v1/auth/me            (Bearer token or HttpOnly session cookie)
 POST /v1/auth/logout        (idempotent; revokes active session)
+GET  /v1/profile
+PATCH /v1/profile           { profile: { full_name } }
+GET  /v1/settings
+PATCH /v1/settings          { settings: {...}, meta: { version } }
 POST /v1/youtube/resolve    { url }
 POST /v1/x/resolve          { url }
 POST /v1/instagram/resolve  { url }
@@ -122,6 +126,8 @@ GET  /admin/jobs            (basic auth)
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
 - Auth endpoints issue cryptographically random session tokens, persist only token hash in storage, and set HttpOnly cookie (`AUTH_SESSION_COOKIE_*` vars).
+- Profile endpoint currently supports full-name updates only; email remains identity-managed.
+- Settings endpoint uses optimistic concurrency (`meta.version`) and returns `settings_version_conflict` on stale writes.
 - Google login endpoint (`/v1/auth/google`) validates Google ID token server-side; set `GOOGLE_CLIENT_IDS` (comma-separated) or `GOOGLE_CLIENT_ID`.
 - Frontend Google flow requires `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (must match one audience accepted by backend).
 - Frontend defaults to Next.js proxy route (`/api/*`) to avoid CORS/cookie mismatch between `localhost:3000` and backend ports.

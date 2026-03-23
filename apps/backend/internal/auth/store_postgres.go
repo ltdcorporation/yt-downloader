@@ -251,6 +251,41 @@ func (p *postgresBackend) GetUserByID(ctx context.Context, userID string) (User,
 	return user, nil
 }
 
+func (p *postgresBackend) UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return User{}, err
+	}
+
+	row := p.db.QueryRowContext(
+		ctx,
+		`UPDATE auth_users
+		 SET full_name = $2,
+		     updated_at = $3
+		 WHERE id = $1
+		 RETURNING id, full_name, email, password_hash, created_at, updated_at`,
+		userID,
+		fullName,
+		updatedAt.UTC(),
+	)
+
+	var user User
+	if err := row.Scan(
+		&user.ID,
+		&user.FullName,
+		&user.Email,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, fmt.Errorf("update auth user full name: %w", err)
+	}
+
+	return user, nil
+}
+
 func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
 	if err := p.ensureSchema(ctx); err != nil {
 		return User{}, err

@@ -8,7 +8,8 @@ interface SettingsProfileProps {
   fullName: string;
   email: string;
   onFullNameChange: (value: string) => void;
-  onEmailChange: (value: string) => void;
+  onEmailChange?: (value: string) => void;
+  emailReadOnly?: boolean;
 }
 
 export default function SettingsProfile({
@@ -17,6 +18,7 @@ export default function SettingsProfile({
   email,
   onFullNameChange,
   onEmailChange,
+  emailReadOnly = false,
 }: SettingsProfileProps) {
   return (
     <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -76,11 +78,15 @@ export default function SettingsProfile({
               Email Address
             </label>
             <input
-              className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm"
+              className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg focus:ring-2 focus:ring-primary/50 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
               type="email"
               value={email}
-              onChange={(e) => onEmailChange(e.target.value)}
+              disabled={emailReadOnly}
+              onChange={(e) => onEmailChange?.(e.target.value)}
             />
+            {emailReadOnly ? (
+              <p className="text-xs text-slate-500">Email updates require a verified flow and are currently read-only.</p>
+            ) : null}
           </div>
         </div>
       </div>

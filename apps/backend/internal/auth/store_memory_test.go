@@ -30,6 +30,21 @@ func TestMemoryBackend_UserAndSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound by id, got %v", err)
 	}
 
+	updatedAt := time.Now().UTC().Add(2 * time.Minute)
+	updatedUser, err := backend.UpdateUserFullName(ctx, user.ID, "Updated User", updatedAt)
+	if err != nil {
+		t.Fatalf("UpdateUserFullName failed: %v", err)
+	}
+	if updatedUser.FullName != "Updated User" {
+		t.Fatalf("unexpected updated full name: %q", updatedUser.FullName)
+	}
+	if !updatedUser.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("unexpected updated timestamp: got %s want %s", updatedUser.UpdatedAt, updatedAt)
+	}
+	if _, err := backend.UpdateUserFullName(ctx, "usr_missing", "Missing", updatedAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on update missing user, got %v", err)
+	}
+
 	gotUser, err := backend.GetUserByEmail(ctx, user.Email)
 	if err != nil {
 		t.Fatalf("GetUserByEmail failed: %v", err)

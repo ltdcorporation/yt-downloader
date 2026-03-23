@@ -203,6 +203,11 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 		 FROM auth_google_identities gi
 		 JOIN auth_users u ON u.id = gi.user_id
 		 WHERE gi.google_subject = $1`)
+	updateFullNameQuery := q(`UPDATE auth_users
+		 SET full_name = $2,
+		     updated_at = $3
+		 WHERE id = $1
+		 RETURNING id, full_name, email, password_hash, created_at, updated_at`)
 
 	rows := sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", "hash", now, now)
 	mock.ExpectQuery(queryByEmail).WithArgs("user@example.com").WillReturnRows(rows)
@@ -228,6 +233,22 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	mock.ExpectQuery(queryByID).WithArgs("missing").WillReturnError(sql.ErrNoRows)
 	if _, err := backend.GetUserByID(context.Background(), "missing"); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
+	}
+
+	updateAt := now.Add(5 * time.Minute)
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", "hash", now, updateAt)
+	mock.ExpectQuery(updateFullNameQuery).WithArgs("usr_1", "Renamed User", updateAt).WillReturnRows(rows)
+	updatedUser, err := backend.UpdateUserFullName(context.Background(), "usr_1", "Renamed User", updateAt)
+	if err != nil {
+		t.Fatalf("UpdateUserFullName failed: %v", err)
+	}
+	if updatedUser.FullName != "Renamed User" {
+		t.Fatalf("unexpected updated full name: %s", updatedUser.FullName)
+	}
+
+	mock.ExpectQuery(updateFullNameQuery).WithArgs("missing", "Renamed User", updateAt).WillReturnError(sql.ErrNoRows)
+	if _, err := backend.UpdateUserFullName(context.Background(), "missing", "Renamed User", updateAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on update, got %v", err)
 	}
 
 	rows = sqlmock.NewRows(rowColumns).AddRow("usr_2", "Google", "google@example.com", "hash", now, now)

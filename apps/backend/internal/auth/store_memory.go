@@ -106,6 +106,24 @@ func (m *memoryBackend) GetUserByID(_ context.Context, userID string) (User, err
 	return user, nil
 }
 
+func (m *memoryBackend) UpdateUserFullName(_ context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+
+	user.FullName = fullName
+	user.UpdatedAt = updatedAt.UTC()
+
+	m.usersByID[userID] = user
+	m.usersByEmail[user.Email] = user
+
+	return user, nil
+}
+
 func (m *memoryBackend) GetUserByGoogleSubject(_ context.Context, googleSubject string) (User, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

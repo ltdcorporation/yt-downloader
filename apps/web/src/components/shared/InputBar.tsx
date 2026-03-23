@@ -13,10 +13,18 @@ import {
 } from "@phosphor-icons/react";
 import DownloadModal from "./DownloadModal";
 import ProcessingModal from "./ProcessingModal";
-import { api, APIError, type ResolveResponse } from "@/lib/api";
+import {
+  api,
+  APIError,
+  type ResolveResponse,
+  type SettingsQuality,
+} from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
+import { useAuthStore } from "@/store";
 
 export default function InputBar() {
+  const { currentUser } = useAuthStore();
+
   const [url, setUrl] = useState("");
   const [resolvedUrl, setResolvedUrl] = useState("");
   const [resolveResult, setResolveResult] = useState<ResolveResponse | null>(
@@ -35,6 +43,8 @@ export default function InputBar() {
   const [mp3JobStatus, setMp3JobStatus] = useState("");
   const [mp3DownloadUrl, setMp3DownloadUrl] = useState("");
   const [mp3JobError, setMp3JobError] = useState("");
+  const [preferredQuality, setPreferredQuality] =
+    useState<SettingsQuality | null>(null);
 
   const troubleshootingItems = (() => {
     if (!errorMessage) return [];
@@ -77,6 +87,35 @@ export default function InputBar() {
     setMp3DownloadUrl("");
     setMp3JobError("");
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!currentUser) {
+      setPreferredQuality(null);
+      return;
+    }
+
+    const loadSettings = async () => {
+      try {
+        const response = await api.getSettings();
+        if (cancelled) {
+          return;
+        }
+        setPreferredQuality(response.settings.preferences.default_quality);
+      } catch {
+        if (!cancelled) {
+          setPreferredQuality(null);
+        }
+      }
+    };
+
+    void loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   const handleProcess = async (rawInput?: string) => {
     const targetUrl = (rawInput ?? url).trim();
@@ -529,6 +568,7 @@ export default function InputBar() {
         sourceUrl={resolvedUrl}
         result={resolveResult}
         isLoading={isLoading}
+        preferredQuality={preferredQuality}
         onConfirmDownload={startFinalDownload}
         onConfirmMp3={startMp3Download}
         onRetryResolve={() => void handleProcess(resolvedUrl || url)}

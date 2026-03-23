@@ -14,7 +14,11 @@ import {
   Image as ImageIcon,
   CheckCircle,
 } from "@phosphor-icons/react";
-import { type ResolveFormat, type ResolveResponse } from "@/lib/api";
+import {
+  type ResolveFormat,
+  type ResolveResponse,
+  type SettingsQuality,
+} from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
 interface DownloadModalProps {
@@ -23,6 +27,7 @@ interface DownloadModalProps {
   sourceUrl: string;
   result: ResolveResponse | null;
   isLoading?: boolean;
+  preferredQuality?: SettingsQuality | null;
   onConfirmDownload: (formatId: string) => void;
   onConfirmMp3: () => void;
   onRetryResolve?: () => void;
@@ -31,6 +36,47 @@ interface DownloadModalProps {
 function parseQualityToHeight(quality: string): number {
   const parsed = Number.parseInt(quality.replace(/[^0-9]/g, ""), 10);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function preferredQualityToHeight(
+  preferredQuality?: SettingsQuality | null,
+): number {
+  switch (preferredQuality) {
+    case "4k":
+      return 2160;
+    case "1080p":
+      return 1080;
+    case "720p":
+      return 720;
+    case "480p":
+      return 480;
+    default:
+      return 0;
+  }
+}
+
+function pickDefaultFormat(
+  formats: ResolveFormat[],
+  preferredQuality?: SettingsQuality | null,
+): ResolveFormat | null {
+  if (formats.length === 0) {
+    return null;
+  }
+
+  const targetHeight = preferredQualityToHeight(preferredQuality);
+  if (targetHeight <= 0) {
+    return formats[formats.length - 1] ?? null;
+  }
+
+  let bestAtOrBelowTarget: ResolveFormat | null = null;
+  for (const format of formats) {
+    const height = parseQualityToHeight(format.quality);
+    if (height <= targetHeight) {
+      bestAtOrBelowTarget = format;
+    }
+  }
+
+  return bestAtOrBelowTarget ?? formats[formats.length - 1] ?? null;
 }
 
 function formatDuration(totalSeconds?: number): string {
@@ -73,6 +119,7 @@ export default function DownloadModal({
   sourceUrl,
   result,
   isLoading,
+  preferredQuality,
   onConfirmDownload,
   onConfirmMp3,
   onRetryResolve,
@@ -186,10 +233,10 @@ export default function DownloadModal({
         return prev;
       }
 
-      // default to highest available quality
-      return mp4Formats[mp4Formats.length - 1]?.id || "";
+      const preferred = pickDefaultFormat(mp4Formats, preferredQuality);
+      return preferred?.id || "";
     });
-  }, [isOpen, mp4Formats]);
+  }, [isOpen, mp4Formats, preferredQuality]);
 
   if (!isOpen) {
     return null;

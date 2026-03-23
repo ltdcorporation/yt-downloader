@@ -17,6 +17,7 @@ type fakeBackend struct {
 	createUserSessionAndGoogleIdentityFn func(ctx context.Context, user User, session Session, identity GoogleIdentity) error
 	getUserByEmailFn                     func(ctx context.Context, email string) (User, error)
 	getUserByIDFn                        func(ctx context.Context, userID string) (User, error)
+	updateUserFullNameFn                 func(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	getUserByGoogleSubjectFn             func(ctx context.Context, googleSubject string) (User, error)
 	createSessionFn                      func(ctx context.Context, session Session) error
 	getSessionByTokenHashFn              func(ctx context.Context, tokenHash string) (Session, error)
@@ -59,6 +60,13 @@ func (f *fakeBackend) GetUserByID(ctx context.Context, userID string) (User, err
 		return f.getUserByIDFn(ctx, userID)
 	}
 	return User{}, nil
+}
+
+func (f *fakeBackend) UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+	if f.updateUserFullNameFn != nil {
+		return f.updateUserFullNameFn(ctx, userID, fullName, updatedAt)
+	}
+	return User{ID: userID, FullName: fullName, UpdatedAt: updatedAt}, nil
 }
 
 func (f *fakeBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
@@ -155,6 +163,9 @@ func TestStore_NilSafetyGuards(t *testing.T) {
 	if _, err := s.GetUserByID(ctx, "usr"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByID")
 	}
+	if _, err := s.UpdateUserFullName(ctx, "usr", "Name", time.Now()); err == nil {
+		t.Fatalf("expected error for uninitialized UpdateUserFullName")
+	}
 	if _, err := s.GetUserByGoogleSubject(ctx, "sub"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByGoogleSubject")
 	}
@@ -179,6 +190,9 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	ctx := context.Background()
 	capturedEmail := ""
 	capturedUserID := ""
+	capturedUpdatedUserID := ""
+	capturedUpdatedFullName := ""
+	capturedUpdatedAt := time.Time{}
 	capturedTokenHash := ""
 	capturedTouch := time.Time{}
 	capturedRevoke := time.Time{}
@@ -212,6 +226,12 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 		getUserByIDFn: func(_ context.Context, userID string) (User, error) {
 			capturedUserID = userID
 			return User{ID: userID}, nil
+		},
+		updateUserFullNameFn: func(_ context.Context, userID, fullName string, updatedAt time.Time) (User, error) {
+			capturedUpdatedUserID = userID
+			capturedUpdatedFullName = fullName
+			capturedUpdatedAt = updatedAt
+			return User{ID: userID, FullName: fullName, UpdatedAt: updatedAt}, nil
 		},
 		getUserByGoogleSubjectFn: func(_ context.Context, googleSubject string) (User, error) {
 			capturedGoogleSubject = googleSubject
@@ -273,6 +293,20 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if capturedUserID != "usr_abc" {
 		t.Fatalf("expected normalized user id, got %q", capturedUserID)
+	}
+
+	nowForUpdate := time.Now().UTC()
+	if _, err := s.UpdateUserFullName(ctx, "  usr_abc ", "  John Doe  ", nowForUpdate); err != nil {
+		t.Fatalf("UpdateUserFullName returned error: %v", err)
+	}
+	if capturedUpdatedUserID != "usr_abc" {
+		t.Fatalf("expected normalized update user id, got %q", capturedUpdatedUserID)
+	}
+	if capturedUpdatedFullName != "John Doe" {
+		t.Fatalf("expected normalized update full name, got %q", capturedUpdatedFullName)
+	}
+	if !capturedUpdatedAt.Equal(nowForUpdate) {
+		t.Fatalf("expected forwarded updatedAt, got %s want %s", capturedUpdatedAt, nowForUpdate)
 	}
 
 	if _, err := s.GetUserByGoogleSubject(ctx, "  sub_abc  "); err != nil {

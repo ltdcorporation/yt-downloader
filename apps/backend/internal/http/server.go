@@ -25,6 +25,7 @@ import (
 	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
+	"yt-downloader/backend/internal/settings"
 	"yt-downloader/backend/internal/ttresolver"
 	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
@@ -60,19 +61,21 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg          config.Config
-	logger       *log.Logger
-	resolver     youtubeResolver
-	xResolver    xMediaResolver
-	igResolver   igMediaResolver
-	ttResolver   ttMediaResolver
-	queue        taskQueue
-	jobStore     jobStore
-	authStore    *auth.Store
-	historyStore *history.Store
-	authService  *auth.Service
-	origins      map[string]struct{}
-	limiter      *ipRateLimiter
+	cfg             config.Config
+	logger          *log.Logger
+	resolver        youtubeResolver
+	xResolver       xMediaResolver
+	igResolver      igMediaResolver
+	ttResolver      ttMediaResolver
+	queue           taskQueue
+	jobStore        jobStore
+	authStore       *auth.Store
+	historyStore    *history.Store
+	settingsStore   *settings.Store
+	authService     *auth.Service
+	settingsService *settings.Service
+	origins         map[string]struct{}
+	limiter         *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
@@ -146,6 +149,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 
 	authStore := auth.NewStore(cfg, logger)
 	historyStore := history.NewStore(cfg, logger)
+	settingsStore := settings.NewStore(cfg, logger)
 	googleVerifier := auth.NewGoogleTokenVerifier(auth.GoogleTokenVerifierOptions{
 		ClientIDs: splitCommaSeparated(cfg.GoogleClientIDs),
 	})
@@ -155,21 +159,24 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		BcryptCost:          cfg.AuthBcryptCost,
 		GoogleTokenVerifier: googleVerifier,
 	})
+	settingsService := settings.NewService(settingsStore)
 
 	return &Server{
-		cfg:          cfg,
-		logger:       logger,
-		resolver:     resolver,
-		xResolver:    xResolver,
-		igResolver:   igResolver,
-		ttResolver:   ttResolver,
-		queue:        queue,
-		jobStore:     store,
-		authStore:    authStore,
-		historyStore: historyStore,
-		authService:  authService,
-		origins:      parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:      newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:             cfg,
+		logger:          logger,
+		resolver:        resolver,
+		xResolver:       xResolver,
+		igResolver:      igResolver,
+		ttResolver:      ttResolver,
+		queue:           queue,
+		jobStore:        store,
+		authStore:       authStore,
+		historyStore:    historyStore,
+		settingsStore:   settingsStore,
+		authService:     authService,
+		settingsService: settingsService,
+		origins:         parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:         newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 }
 
@@ -194,6 +201,11 @@ func (s *Server) Close() {
 			s.logger.Printf("warning: close history store: %v", err)
 		}
 	}
+	if s.settingsStore != nil {
+		if err := s.settingsStore.Close(); err != nil {
+			s.logger.Printf("warning: close settings store: %v", err)
+		}
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -210,6 +222,10 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/auth/google", s.handleAuthGoogleLogin)
 	r.Get("/v1/auth/me", s.handleAuthMe)
 	r.Post("/v1/auth/logout", s.handleAuthLogout)
+	r.Get("/v1/profile", s.handleProfileGet)
+	r.Patch("/v1/profile", s.handleProfilePatch)
+	r.Get("/v1/settings", s.handleSettingsGet)
+	r.Patch("/v1/settings", s.handleSettingsPatch)
 	r.Get("/v1/history", s.handleHistoryList)
 	r.Get("/v1/history/stats", s.handleHistoryStats)
 	r.Post("/v1/history/{id}/redownload", s.handleHistoryRedownload)

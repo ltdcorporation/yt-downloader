@@ -125,6 +125,53 @@ export interface AuthMeResponse {
   expires_at: string;
 }
 
+export type SettingsQuality = "4k" | "1080p" | "720p" | "480p";
+
+export interface SettingsSnapshotResponse {
+  settings: {
+    preferences: {
+      default_quality: SettingsQuality;
+      auto_trim_silence: boolean;
+      thumbnail_generation: boolean;
+    };
+    notifications: {
+      email: {
+        processing: boolean;
+        storage: boolean;
+        summary: boolean;
+      };
+    };
+  };
+  meta: {
+    version: number;
+    updated_at: string;
+  };
+}
+
+export interface SettingsPatchRequest {
+  settings: {
+    preferences?: {
+      default_quality?: SettingsQuality;
+      auto_trim_silence?: boolean;
+      thumbnail_generation?: boolean;
+    };
+    notifications?: {
+      email?: {
+        processing?: boolean;
+        storage?: boolean;
+        summary?: boolean;
+      };
+    };
+  };
+  meta: {
+    version: number;
+  };
+}
+
+export interface ProfileResponse {
+  profile: AuthUser;
+}
+
 export class APIError extends Error {
   code?: string;
 
@@ -220,6 +267,26 @@ export const api = {
   logout: () =>
     fetcher<{ ok: boolean }>("/v1/auth/logout", {
       method: "POST",
+    }),
+
+  profile: () => fetcher<ProfileResponse>("/v1/profile"),
+
+  updateProfile: (payload: { fullName: string }) =>
+    fetcher<ProfileResponse>("/v1/profile", {
+      method: "PATCH",
+      body: JSON.stringify({
+        profile: {
+          full_name: payload.fullName,
+        },
+      }),
+    }),
+
+  getSettings: () => fetcher<SettingsSnapshotResponse>("/v1/settings"),
+
+  updateSettings: (payload: SettingsPatchRequest) =>
+    fetcher<SettingsSnapshotResponse>("/v1/settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
     }),
 
   resolve: (url: string) => {
