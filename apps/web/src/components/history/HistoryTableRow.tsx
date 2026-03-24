@@ -16,6 +16,7 @@ const PLATFORM_COLORS: Record<HistoryTableItem["platform"], string> = {
 };
 
 const STATUS_COLORS: Record<HistoryAttemptStatus, string> = {
+  resolved: "bg-blue-100 text-blue-700",
   queued: "bg-amber-100 text-amber-700",
   processing: "bg-sky-100 text-sky-700",
   done: "bg-emerald-100 text-emerald-700",
@@ -24,6 +25,7 @@ const STATUS_COLORS: Record<HistoryAttemptStatus, string> = {
 };
 
 const STATUS_LABELS: Record<HistoryAttemptStatus, string> = {
+  resolved: "Resolved",
   queued: "Queued",
   processing: "Processing",
   done: "Done",

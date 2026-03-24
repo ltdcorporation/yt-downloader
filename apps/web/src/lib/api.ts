@@ -51,6 +51,7 @@ export interface JobStatusResponse {
 export type HistoryPlatform = "youtube" | "tiktok" | "instagram" | "x";
 
 export type HistoryAttemptStatus =
+  | "resolved"
   | "queued"
   | "processing"
   | "done"
@@ -339,6 +340,17 @@ export const api = {
       suffix ? `/v1/history?${suffix}` : "/v1/history",
     );
   },
+
+  historyCreate: (payload: {
+    url: string;
+    platform: string;
+    title: string;
+    thumbnail_url: string;
+  }) =>
+    fetcher<{ ok: boolean }>("/v1/history", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   historyStats: () => fetcher<HistoryStatsResponse>("/v1/history/stats"),
 

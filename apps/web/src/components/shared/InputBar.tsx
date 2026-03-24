@@ -134,6 +134,24 @@ export default function InputBar() {
       setResolvedUrl(targetUrl);
       setResolveResult(result);
 
+      // Save to history if user is logged in
+      const platform = detectPlatform(targetUrl);
+      if (currentUser && platform !== "unknown") {
+        // Run in background without await
+        (async () => {
+          try {
+            await api.historyCreate({
+              url: targetUrl,
+              platform,
+              title: result.title,
+              thumbnail_url: result.thumbnail || "",
+            });
+          } catch (err) {
+            console.error("Failed to save history:", err);
+          }
+        })();
+      }
+
       // Show DownloadModal for all supported platforms
       setIsModalOpen(true);
     } catch (error) {
