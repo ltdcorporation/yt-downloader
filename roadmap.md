@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
+_Last update: 2026-03-24 (History backend enterprise refresh + API integration v1 cleanup)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -143,6 +143,7 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
   - [x] `POST /v1/jobs/mp3`
   - [x] `GET /v1/jobs/:id`
   - [x] `GET /admin/jobs`
+  - [x] `POST /v1/history` (create/resolve capture)
 - [x] History backend enterprise **Phase 1** selesai:
   - [x] Store layer `internal/history` (memory + postgres)
   - [x] Auto schema bootstrap tabel `history_items` + `history_attempts`
@@ -157,6 +158,13 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
   - [x] Action API `POST /v1/history/{id}/redownload` (mode direct/queued)
   - [x] Delete API `DELETE /v1/history/{id}` (soft delete owner-scoped)
   - [x] Test suite history handlers + store query path
+- [x] History backend enterprise **Phase 4 (Resolve Capture API)** baseline masuk:
+  - [x] Endpoint `POST /v1/history` (auth required) untuk simpan event resolve awal
+  - [x] Enum/filter status history sudah mencakup `resolved`
+  - [x] FE home flow kirim create-history saat resolve (best-effort, non-blocking)
+- [ ] History backend enterprise **Phase 4 hardening** (next):
+  - [ ] Sinkronkan constraint schema Postgres agar status `resolved` diterima native
+  - [ ] Tambah integration test Postgres untuk jalur `POST /v1/history`
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
 - [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
 - [x] R2 sudah diisi config real
@@ -281,6 +289,9 @@ _Last update: 2026-03-18 (X + Instagram + TikTok resolver multi-cookie rollout)_
 - [x] Resolver Instagram multi-cookie aktif + tervalidasi test-suite
 - [x] Resolver TikTok multi-cookie aktif + tervalidasi test-suite
 - [x] False-negative direct `http-*` MP4 untuk X sudah dipatch
+- [x] History enterprise baseline aktif (write/read/redownload/delete + resolve-capture endpoint)
+- [ ] Parity status `resolved` antara handler enum dan constraint schema Postgres
+- [ ] Endpoint `GET /v1/jobs/:id` owner-scoped untuk session login
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
 - [ ] Worker tidak silent-fail
@@ -299,7 +310,7 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa resolve URL YouTube dari Home
 - [x] User bisa download MP4 dari pilihan format
 - [ ] User bisa request MP3 + lihat progress + unduh hasil
-- [ ] History pakai data real (bukan sample)
+- [x] History pakai data real (bukan sample)
 - [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
 - [ ] User bisa resolve + **pilih kualitas** + download dari link Instagram via UI
 - [ ] User bisa resolve + **pilih kualitas** + download dari link TikTok via UI
@@ -412,12 +423,77 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] UI frontend belum map code `tt_hls_only_not_supported` ke warning yang user-friendly
 
 
-feat/api-integration-v1.
-Berikut adalah ringkasan perubahan yang telah dilakukan:
-1. Membuat fungsi deteksi (apps/web/src/lib/utils.ts): Menambahkan fungsi utilitas detectPlatform yang akan menganalisa link/URL dan mendeteksi apakah itu link dari YouTube, TikTok, Instagram, Twitter (X), atau platform yang tidak dikenal.
-2. Dynamic Routing di API (apps/web/src/lib/api.ts): Fungsi api.resolve kini akan secara otomatis mengarahkan request ke endpoint backend yang sesuai (misal: /v1/tiktok/resolve jika link TikTok, atau /v1/youtube/resolve jika YouTube) berdasarkan platform yang terdeteksi.
-3. Pembaruan UI Input Bar (apps/web/src/components/shared/InputBar.tsx): Begitu user menempelkan link (via tombol Paste atau keyboard),
-sistem akan langsung membaca link tersebut dan:
-  * Mengganti ikon utama di sebelah kiri (misal: ikon YouTube menjadi ikon TikTok atau Instagram).
-  * Menyesuaikan teks petunjuk (placeholder) di dalam input kolom sesuai dengan platformnya.
-  * Tombol resolve sekarang juga akan menyesuaikan proses backend secara otomatis tanpa intervensi user.
+---
+
+## 7) Delivery Notes — History Backend Enterprise (2026-03-24 refresh)
+
+### A. Scope yang dikerjakan
+
+- [x] Implementasi model item+attempt (`history_items` + `history_attempts`) owner-scoped per user
+- [x] Write-path history di flow:
+  - [x] `POST /v1/jobs/mp3` (create queued attempt + `job_id` link)
+  - [x] `GET /v1/download/mp4` (processing -> done/failed)
+- [x] Sinkronisasi status dari worker by `job_id` (`queued -> processing -> done/failed`)
+- [x] Read API history lengkap:
+  - [x] `GET /v1/history`
+  - [x] `GET /v1/history/stats`
+  - [x] `POST /v1/history/{id}/redownload`
+  - [x] `DELETE /v1/history/{id}`
+- [x] Endpoint create ringan `POST /v1/history` untuk catat resolve event (status `resolved`)
+
+### B. Jalur pengerjaan
+
+- [x] Implement store abstraction `internal/history` (engine memory + postgres)
+- [x] Auto schema bootstrap tabel/index saat startup backend
+- [x] Integrasi auth boundary via `requireSessionIdentity` untuk endpoint history
+- [x] Integrasi frontend:
+  - [x] halaman `/history` pakai data API real
+  - [x] home flow kirim create-history setelah resolve (best-effort, tidak blok UI)
+
+### C. Hasil validasi
+
+- [x] Owner scoping jalan (query/update history selalu berdasarkan `user_id` session)
+- [x] Semantik redownload tervalidasi:
+  - [x] MP3 unexpired -> `mode=direct`
+  - [x] MP3 expired -> `mode=queued` + enqueue ulang job
+  - [x] MP4/image -> `mode=direct` via endpoint proxy download
+- [x] Soft delete item langsung menyembunyikan data dari list API
+- [x] History test suite backend hijau untuk scope handler/store
+  - [x] smoke lokal: `go test ./internal/history ./internal/http -run History -count=1`
+
+### D. Catatan batasan saat ini (History)
+
+- [ ] Constraint status di schema Postgres belum memasukkan `resolved` (perlu align dengan `POST /v1/history`)
+- [ ] Endpoint `GET /v1/jobs/:id` belum owner-scoped untuk pengguna login
+- [ ] Retention/purge terjadwal untuk history belum aktif
+- [ ] Observability history (metrics + audit fields) belum lengkap
+
+---
+
+## 8) Delivery Notes — API Integration v1 (2026-03-24)
+
+### A. Scope yang dikerjakan
+
+- [x] Utility deteksi platform `detectPlatform` di `apps/web/src/lib/utils.ts`
+- [x] Dynamic routing di `api.resolve` (`apps/web/src/lib/api.ts`) ke endpoint backend sesuai platform
+- [x] Input bar adaptif (`apps/web/src/components/shared/InputBar.tsx`):
+  - [x] ikon otomatis mengikuti platform URL
+  - [x] placeholder otomatis mengikuti platform URL
+  - [x] resolve flow otomatis sesuai platform tanpa mode selector manual
+
+### B. Jalur pengerjaan
+
+- [x] Patch FE helper (`utils.ts`) + API client (`api.ts`)
+- [x] Wiring komponen input agar Paste/Enter langsung trigger resolve pipeline
+- [x] Hook best-effort simpan history setelah resolve sukses untuk user login
+
+### C. Hasil validasi
+
+- [x] Satu kolom input sekarang bisa dipakai untuk YouTube/X/Instagram/TikTok
+- [x] Tidak perlu ubah mode manual sebelum resolve
+- [x] Home flow sinkron dengan endpoint backend platform masing-masing
+
+### D. Catatan batasan saat ini (API integration v1)
+
+- [ ] Analytics event FE (success/fail resolve per platform) belum ditambahkan
+- [ ] Untuk URL yang tidak terdeteksi platform, UI tetap return error `Unsupported or invalid social media URL.`
