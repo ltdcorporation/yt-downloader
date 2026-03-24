@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-24 (History backend enterprise refresh + API integration v1 cleanup)_
+_Last update: 2026-03-24 (History backend enterprise refresh + frontend checklist sync)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -13,115 +13,116 @@ _Last update: 2026-03-24 (History backend enterprise refresh + API integration v
 ### A. Status Frontend Saat Ini
 
 - [x] Next.js app + basic pages (`/`, `/history`, `/settings`, `/admin`)
-- [x] Home flow **real** untuk YouTube resolve + MP4 download (Step C)
+- [x] Home flow **real** dengan satu input dinamis untuk YouTube/X/Instagram/TikTok
+- [x] Input bar auto-detect platform (ikon + placeholder + resolver endpoint)
 - [x] Frontend pakai internal proxy `/api/*` (lebih aman buat publik)
-- [x] `/history` sudah terhubung ke API real (history list/stats/redownload/delete)
-- [x] `/settings` masih mock data
-- [x] MP3 flow UI (create job + polling status) belum lengkap di halaman utama
-- [x] Home flow X/Twitter resolve belum ada di UI (backend sudah siap)
-- [x] UI **pilih kualitas download MP4 untuk X/Twitter** belum dikerjakan (status FE: belum implementasi)
-- [ ] UX warning khusus untuk kasus X **HLS-only (by design belum didukung)** belum ada di FE
-- [x] Home flow Instagram resolve belum ada di UI (backend sudah siap)
-- [ ] UI **pilih kualitas download MP4 untuk Instagram** belum dikerjakan (status FE: belum implementasi)
-- [ ] UX warning khusus untuk kasus Instagram **HLS-only (by design belum didukung)** belum ada di FE
-- [ ] Home flow TikTok resolve belum ada di UI (backend sudah siap)
-- [ ] UI **pilih kualitas download MP4 untuk TikTok** belum dikerjakan (status FE: belum implementasi)
-- [ ] UX warning khusus untuk kasus TikTok **HLS-only (by design belum didukung)** belum ada di FE
+- [x] UI picker kualitas MP4 aktif di modal download (YouTube/X/Instagram/TikTok)
+- [x] UX warning HLS-only untuk X/Instagram/TikTok sudah ada (by design belum didukung)
+- [x] MP3 flow UI aktif di home (create job + polling + state done/failed + download)
+- [x] `/history` sudah terhubung ke API real (list/stats/redownload/delete)
+- [x] `/settings` sudah terhubung ke API real (load + patch + save/discard)
+- [ ] Logging analytics event resolve success/fail per platform belum ditambahkan
+- [ ] Fallback UX khusus untuk kasus auto-download diblok browser belum dipoles penuh
 
 ### B. Milestone FE-1 — Home Core Flow (MVP)
 
-**Target:** user paste URL -> lihat opsi -> download MP4 sukses.
+**Target:** user paste URL -> auto-detect platform -> lihat opsi -> download MP4 sukses.
 
 - [x] Input URL + paste clipboard
-- [x] Call `POST /api/v1/youtube/resolve`
+- [x] Auto route resolver ke endpoint sesuai platform (`/v1/{platform}/resolve`)
 - [x] Render metadata (title, thumbnail, duration)
 - [x] Render list format MP4
 - [x] Download MP4 via `GET /api/v1/download/mp4`
-- [x] Tambah UX state yang lebih rapih (retry CTA, inline troubleshooting)
-- [ ] Tambah fallback kalau `window.open` diblok browser (UX copy lebih jelas)
+- [x] Tambah UX state lebih rapi (retry CTA, inline troubleshooting)
+- [ ] Tambah fallback copy/CTA yang lebih eksplisit kalau auto-download diblok browser
 
 ### C. Milestone FE-2 — MP3 UX di Home
 
 **Target:** user bisa request MP3 dari UI, lihat progress, dan unduh saat done.
 
-- [ ] Tombol/opsi “Convert to MP3” di modal/home
-- [ ] Call `POST /api/v1/jobs/mp3`
-- [ ] Poll `GET /api/v1/jobs/:id`
-- [ ] Status UI: queued -> processing -> done/failed
-- [ ] Tampilkan `download_url` saat done
+- [x] Tombol/opsi “Convert to MP3” di modal/home
+- [x] Call `POST /api/v1/jobs/mp3`
+- [x] Poll `GET /api/v1/jobs/:id`
+- [x] Status UI: queued -> processing -> done/failed
+- [x] Tampilkan `download_url` saat done
+- [ ] Ekstensi MP3 untuk platform non-YouTube belum dikerjakan (masih YouTube-only by design)
 
 ### D. Milestone FE-3 — History (Data Real)
 
 **Target:** `/history` tidak lagi sample statis.
 
-- [x] Ambil data job real dari backend (`GET /v1/history` + cursor pagination)
-- [x] Loading, empty-state, error-state yang jelas
+- [x] Ambil data real dari backend (`GET /v1/history` + cursor pagination)
+- [x] Loading, empty-state, error-state jelas
 - [x] Filter dasar (platform + search)
 - [x] Aksi relevan (download again + delete)
 - [x] Stats card dari backend (`GET /v1/history/stats`)
+- [x] Redownload queued MP3 dipoll sampai siap lalu auto-trigger download
 
 ### E. Milestone FE-4 — Settings (Minimum Useful)
 
-**Target:** `/settings` jadi kepake, bukan mock doang.
+**Target:** `/settings` benar-benar kepake (bukan mock).
 
-- [ ] Simpan preference sederhana (localStorage dulu)
-- [ ] Sinkronkan preference dengan behavior UI yang relevan
-- [ ] UX tombol save/discard yang benar-benar ngaruh
+- [x] Load snapshot profile + settings dari backend (`GET /v1/profile`, `GET /v1/settings`)
+- [x] Save patch profile + settings ke backend (`PATCH /v1/profile`, `PATCH /v1/settings`)
+- [x] UX save/discard + dirty-state guard jalan
+- [x] Handle conflict notice (`settings_version_conflict`) di UI
+- [ ] Fallback offline/local-only mode belum dikerjakan
 
-### F. Milestone FE-5 — X/Twitter Flow di Home (Next)
+### F. Milestone FE-5 — X/Twitter Flow di Home (Done Baseline, Hardening Lanjut)
 
 **Target:** user paste link X/Twitter -> resolve -> pilih kualitas -> download MP4.
 
-**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow X masih **belum dikerjakan**.
+**Status saat ini:** baseline flow sudah aktif end-to-end di FE.
 
-- [x] Tambah source mode (YouTube / X) di UI home
-- [x] Call `POST /api/v1/x/resolve` saat mode X aktif
-- [ ] Render metadata + format list dari response resolver X
-- [ ] Tambah UI picker kualitas MP4 khusus X (list/card per format + size jika tersedia)
-- [ ] Tambah CTA download MP4 per kualitas hasil resolver X
-- [ ] Samakan UX pola pemilihan kualitas X agar konsisten dengan flow YouTube
-- [ ] Error UX spesifik X (live ditolak, format tidak tersedia, restricted media)
-- [ ] Handle backend error code `x_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
-- [ ] Tampilkan state “belum support HLS-only” + CTA fallback (mis. coba link lain) saat code tersebut muncul
-- [ ] Logging event ringan buat success/fail resolve X
+- [x] Auto-detect URL X/Twitter dari input tunggal
+- [x] Call `POST /api/v1/x/resolve`
+- [x] Render metadata + format list response resolver X
+- [x] UI picker kualitas MP4 khusus X (list/card per format + size jika tersedia)
+- [x] CTA download MP4 per kualitas hasil resolver X
+- [x] UX pemilihan kualitas sudah konsisten dengan flow utama
+- [x] Handle backend error code `x_hls_only_not_supported` -> warning human-friendly
+- [x] State “belum support HLS-only” + CTA retry/fallback tampil di UI
+- [ ] Error UX sangat spesifik untuk semua varian X (live/restricted/edge lainnya) masih bisa dipoles
+- [ ] Logging event ringan success/fail resolve X belum ada
 
-### G. Milestone FE-6 — Instagram Flow di Home (Next)
+### G. Milestone FE-6 — Instagram Flow di Home (Done Baseline, Hardening Lanjut)
 
 **Target:** user paste link Instagram -> resolve -> pilih kualitas -> download MP4.
 
-**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow Instagram masih **belum dikerjakan**.
+**Status saat ini:** baseline flow sudah aktif end-to-end di FE.
 
-- [ ] Tambah source mode (YouTube / X / Instagram) di UI home
-- [ ] Call `POST /api/v1/instagram/resolve` saat mode Instagram aktif
-- [ ] Render metadata + format list dari response resolver Instagram
-- [ ] Tambah UI picker kualitas MP4 khusus Instagram (list/card per format + size jika tersedia)
-- [ ] Tambah CTA download MP4 per kualitas hasil resolver Instagram
-- [ ] Samakan UX pola pemilihan kualitas Instagram agar konsisten dengan flow YouTube/X
-- [ ] Handle backend error code `ig_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
-- [ ] Tampilkan state “belum support HLS-only” + CTA fallback saat code tersebut muncul
-- [ ] Logging event ringan buat success/fail resolve Instagram
+- [x] Auto-detect URL Instagram dari input tunggal
+- [x] Call `POST /api/v1/instagram/resolve`
+- [x] Render metadata + format list dari resolver Instagram
+- [x] UI picker kualitas MP4 khusus Instagram
+- [x] CTA download MP4 per kualitas resolver Instagram
+- [x] UX konsisten dengan flow platform lain
+- [x] Handle backend error code `ig_hls_only_not_supported` -> warning human-friendly
+- [x] State “belum support HLS-only” + CTA fallback tampil saat code muncul
+- [ ] Logging event ringan success/fail resolve Instagram belum ada
 
-### H. Milestone FE-7 — TikTok Flow di Home (Next)
+### H. Milestone FE-7 — TikTok Flow di Home (Done Baseline, Hardening Lanjut)
 
 **Target:** user paste link TikTok -> resolve -> pilih kualitas -> download MP4.
 
-**Status saat ini:** backend sudah siap, tapi implementasi FE untuk flow TikTok masih **belum dikerjakan**.
+**Status saat ini:** baseline flow sudah aktif end-to-end di FE.
 
-- [ ] Tambah source mode (YouTube / X / Instagram / TikTok) di UI home
-- [ ] Call `POST /api/v1/tiktok/resolve` saat mode TikTok aktif
-- [ ] Render metadata + format list dari response resolver TikTok
-- [ ] Tambah UI picker kualitas MP4 khusus TikTok (list/card per format + size jika tersedia)
-- [ ] Tambah CTA download MP4 per kualitas hasil resolver TikTok
-- [ ] Samakan UX pola pemilihan kualitas TikTok agar konsisten dengan flow YouTube/X/Instagram
-- [ ] Handle backend error code `tt_hls_only_not_supported` -> tampilkan warning human-friendly (bukan generic error)
-- [ ] Tampilkan state “belum support HLS-only” + CTA fallback saat code tersebut muncul
-- [ ] Logging event ringan buat success/fail resolve TikTok
+- [x] Auto-detect URL TikTok dari input tunggal
+- [x] Call `POST /api/v1/tiktok/resolve`
+- [x] Render metadata + format list dari resolver TikTok
+- [x] UI picker kualitas MP4 khusus TikTok
+- [x] CTA download MP4 per kualitas resolver TikTok
+- [x] UX konsisten dengan flow platform lain
+- [x] Handle backend error code `tt_hls_only_not_supported` -> warning human-friendly
+- [x] State “belum support HLS-only” + CTA fallback tampil saat code muncul
+- [ ] Logging event ringan success/fail resolve TikTok belum ada
 
 ### I. Frontend Quality Checklist
 
-- [ ] Error message human-readable (bukan raw error backend)
-- [ ] State konsisten (loading/disabled/success/error)
-- [ ] Mobile-first tetap enak di viewport kecil
+- [x] Error message mayoritas human-readable (termasuk mapping HLS-only)
+- [ ] Normalisasi seluruh error backend edge-case ke copy non-teknis belum 100%
+- [x] State utama konsisten (loading/disabled/success/error)
+- [x] Mobile-first tetap layak untuk viewport kecil
 - [x] Tidak ada mock data tersisa di flow MVP
 
 ---
@@ -309,12 +310,12 @@ MVP dianggap siap kalau semua checklist ini true:
 ### Frontend Gate
 - [x] User bisa resolve URL YouTube dari Home
 - [x] User bisa download MP4 dari pilihan format
-- [ ] User bisa request MP3 + lihat progress + unduh hasil
+- [x] User bisa request MP3 + lihat progress + unduh hasil (YouTube)
 - [x] History pakai data real (bukan sample)
-- [ ] User bisa resolve + **pilih kualitas** + download dari link X via UI
-- [ ] User bisa resolve + **pilih kualitas** + download dari link Instagram via UI
-- [ ] User bisa resolve + **pilih kualitas** + download dari link TikTok via UI
-- [ ] Saat dapat error code HLS-only (`x_hls_only_not_supported` / `ig_hls_only_not_supported` / `tt_hls_only_not_supported`), UI menampilkan warning terarah (by design belum support)
+- [x] User bisa resolve + **pilih kualitas** + download dari link X via UI
+- [x] User bisa resolve + **pilih kualitas** + download dari link Instagram via UI
+- [x] User bisa resolve + **pilih kualitas** + download dari link TikTok via UI
+- [x] Saat dapat error code HLS-only (`x_hls_only_not_supported` / `ig_hls_only_not_supported` / `tt_hls_only_not_supported`), UI menampilkan warning terarah (by design belum support)
 
 ### Backend Gate
 - [x] API tidak terekspos publik langsung (internal-only + proxy)
@@ -361,8 +362,8 @@ MVP dianggap siap kalau semua checklist ini true:
 
 - [ ] Belum semua post X selalu punya direct MP4 (sebagian HLS-only)
 - [ ] Untuk kasus HLS-only, belum ada remux fallback di backend saat ini (by design: belum dikerjakan)
-- [ ] UI frontend untuk resolve X + picker kualitas download masih backlog (belum implementasi)
-- [ ] UI frontend belum map code `x_hls_only_not_supported` ke warning yang user-friendly
+- [x] (Update 2026-03-24) UI frontend resolve X + picker kualitas download sudah masuk baseline
+- [x] (Update 2026-03-24) UI frontend sudah map code `x_hls_only_not_supported` ke warning user-friendly
 
 ---
 
@@ -390,8 +391,8 @@ MVP dianggap siap kalau semua checklist ini true:
 ### D. Catatan batasan saat ini (Instagram)
 
 - [ ] Untuk post IG HLS-only, belum ada remux fallback (masih return typed warning)
-- [ ] UI frontend untuk resolve IG + picker kualitas download masih backlog (belum implementasi)
-- [ ] UI frontend belum map code `ig_hls_only_not_supported` ke warning yang user-friendly
+- [x] (Update 2026-03-24) UI frontend resolve IG + picker kualitas download sudah masuk baseline
+- [x] (Update 2026-03-24) UI frontend sudah map code `ig_hls_only_not_supported` ke warning user-friendly
 
 ---
 
@@ -419,8 +420,8 @@ MVP dianggap siap kalau semua checklist ini true:
 ### D. Catatan batasan saat ini (TikTok)
 
 - [ ] Untuk post TikTok HLS-only, belum ada remux fallback (masih return typed warning)
-- [ ] UI frontend untuk resolve TikTok + picker kualitas download masih backlog (belum implementasi)
-- [ ] UI frontend belum map code `tt_hls_only_not_supported` ke warning yang user-friendly
+- [x] (Update 2026-03-24) UI frontend resolve TikTok + picker kualitas download sudah masuk baseline
+- [x] (Update 2026-03-24) UI frontend sudah map code `tt_hls_only_not_supported` ke warning user-friendly
 
 
 ---
