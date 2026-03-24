@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/avatar"
 )
 
@@ -262,6 +263,106 @@ func TestProfileAvatar_ServiceUnavailable(t *testing.T) {
 	server.Handler().ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected delete 503, got %d body=%s", deleteRec.Code, deleteRec.Body.String())
+	}
+}
+
+func TestProfileAvatarUpload_UnauthorizedAndMalformed(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+	installAvatarService(t, server, &testAvatarObjectStore{}, testAvatarProcessor{out: []byte("webp-bytes")})
+
+	t.Run("unauthorized", func(t *testing.T) {
+		req := buildAvatarMultipartRequest(t, "/v1/profile/avatar", []byte("raw-image"), true)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 unauthorized, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("malformed payload", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/profile/avatar", strings.NewReader("not-multipart"))
+		req.Header.Set("Content-Type", "application/json")
+		token, _ := registerUserAndGetToken(t, server)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 malformed payload, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["code"] != "avatar_invalid_request" {
+			t.Fatalf("expected avatar_invalid_request code, got %v", payload["code"])
+		}
+	})
+}
+
+func TestAvatarHandler_WriteAvatarPayloadErrorBranches(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "payload too large", err: avatar.ErrPayloadTooLarge, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "avatar_payload_too_large"},
+		{name: "payload empty", err: avatar.ErrPayloadEmpty, wantStatus: http.StatusBadRequest, wantCode: "avatar_invalid_request"},
+		{name: "max bytes error", err: &http.MaxBytesError{Limit: 1}, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "avatar_payload_too_large"},
+		{name: "multipart too large", err: multipart.ErrMessageTooLarge, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "avatar_payload_too_large"},
+		{name: "missing file alias", err: errors.New("no such file or directory"), wantStatus: http.StatusBadRequest, wantCode: "avatar_invalid_request"},
+		{name: "generic malformed", err: errors.New("bad multipart"), wantStatus: http.StatusBadRequest, wantCode: "avatar_invalid_request"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			server.writeAvatarPayloadError(rec, tc.err)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status mismatch: got=%d want=%d body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			payload := decodeJSONMap(t, rec.Body.Bytes())
+			if payload["code"] != tc.wantCode {
+				t.Fatalf("code mismatch: got=%v want=%s", payload["code"], tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestAvatarHandler_WriteAvatarMutationErrorBranches(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "payload too large", err: avatar.ErrPayloadTooLarge, wantStatus: http.StatusRequestEntityTooLarge, wantCode: "avatar_payload_too_large"},
+		{name: "payload empty", err: avatar.ErrPayloadEmpty, wantStatus: http.StatusBadRequest, wantCode: "avatar_invalid_request"},
+		{name: "invalid image", err: avatar.ErrInvalidImage, wantStatus: http.StatusBadRequest, wantCode: "avatar_invalid_image"},
+		{name: "delete failed", err: avatar.ErrDeleteFailed, wantStatus: http.StatusConflict, wantCode: "avatar_replace_conflict"},
+		{name: "rollback failed", err: avatar.ErrRollbackFailed, wantStatus: http.StatusConflict, wantCode: "avatar_replace_conflict"},
+		{name: "user not found", err: auth.ErrUserNotFound, wantStatus: http.StatusNotFound, wantCode: "profile_not_found"},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, wantStatus: http.StatusGatewayTimeout, wantCode: "avatar_timeout"},
+		{name: "context canceled", err: context.Canceled, wantStatus: http.StatusRequestTimeout, wantCode: "avatar_canceled"},
+		{name: "unknown error", err: errors.New("unknown"), wantStatus: http.StatusInternalServerError, wantCode: "avatar_unavailable"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			server.writeAvatarMutationError(rec, "usr_1", "upload", tc.err)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status mismatch: got=%d want=%d body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			payload := decodeJSONMap(t, rec.Body.Bytes())
+			if payload["code"] != tc.wantCode {
+				t.Fatalf("code mismatch: got=%v want=%s", payload["code"], tc.wantCode)
+			}
+		})
 	}
 }
 

@@ -29,6 +29,8 @@ var (
 	ErrRollbackFailed   = errors.New("avatar rollback failed")
 	ErrInvalidAvatarURL = errors.New("invalid avatar configuration")
 	ErrServiceNotReady  = errors.New("avatar service is not initialized")
+
+	readRandomBytes = rand.Read
 )
 
 type userStore interface {
@@ -264,7 +266,7 @@ func (s *Service) deleteObjectStrict(ctx context.Context, objectKey string) erro
 
 func (s *Service) generateObjectKey(userID string) (string, error) {
 	randomPart := make([]byte, 8)
-	if _, err := rand.Read(randomPart); err != nil {
+	if _, err := readRandomBytes(randomPart); err != nil {
 		return "", err
 	}
 	stamp := s.now().UTC().Format("20060102T150405.000000000")

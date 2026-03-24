@@ -90,3 +90,68 @@ func TestCropAndResizeSquare(t *testing.T) {
 		t.Fatalf("unexpected output bounds: %+v", out.Bounds())
 	}
 }
+
+func TestNewFFmpegWebPProcessor_Defaults(t *testing.T) {
+	processor := NewFFmpegWebPProcessor("", 0)
+	if processor.ffmpegBinary != "ffmpeg" {
+		t.Fatalf("expected default ffmpeg binary, got %q", processor.ffmpegBinary)
+	}
+	if processor.targetSize != DefaultTargetSize {
+		t.Fatalf("expected default target size, got %d", processor.targetSize)
+	}
+}
+
+func TestIsSupportedImageFormat(t *testing.T) {
+	if !isSupportedImageFormat("PNG") {
+		t.Fatalf("expected PNG to be supported")
+	}
+	if !isSupportedImageFormat("jpeg") {
+		t.Fatalf("expected jpeg to be supported")
+	}
+	if isSupportedImageFormat("bmp") {
+		t.Fatalf("expected bmp to be unsupported")
+	}
+}
+
+func TestFFmpegWebPProcessor_NormalizeAdditionalErrors(t *testing.T) {
+	var nilProcessor *FFmpegWebPProcessor
+	if _, err := nilProcessor.Normalize(context.Background(), []byte("raw")); !errors.Is(err, ErrServiceNotReady) {
+		t.Fatalf("expected ErrServiceNotReady for nil processor, got %v", err)
+	}
+
+	processor := NewFFmpegWebPProcessor("ffmpeg", 512)
+
+	valid := createPNGTestImage(t, 120, 120)
+	truncated := valid[:len(valid)-12]
+	if _, err := processor.Normalize(context.Background(), truncated); !errors.Is(err, ErrInvalidImage) {
+		t.Fatalf("expected ErrInvalidImage for truncated payload, got %v", err)
+	}
+
+	processor.runCommand = func(_ context.Context, _ string, _ []string, _ []byte) ([]byte, []byte, error) {
+		return nil, nil, nil
+	}
+	if _, err := processor.Normalize(context.Background(), createPNGTestImage(t, 120, 120)); err == nil || !strings.Contains(err.Error(), "empty output") {
+		t.Fatalf("expected empty output error, got %v", err)
+	}
+}
+
+func TestDefaultCommandRunner(t *testing.T) {
+	stdout, stderr, err := defaultCommandRunner(context.Background(), "sh", []string{"-c", "cat"}, []byte("hello-avatar"))
+	if err != nil {
+		t.Fatalf("expected command success, got err: %v", err)
+	}
+	if string(stdout) != "hello-avatar" {
+		t.Fatalf("unexpected stdout: %q", string(stdout))
+	}
+	if len(stderr) != 0 {
+		t.Fatalf("expected empty stderr, got %q", string(stderr))
+	}
+
+	_, stderr, err = defaultCommandRunner(context.Background(), "sh", []string{"-c", "echo boom >&2; exit 3"}, nil)
+	if err == nil {
+		t.Fatalf("expected command failure")
+	}
+	if !strings.Contains(string(stderr), "boom") {
+		t.Fatalf("expected stderr output, got %q", string(stderr))
+	}
+}
