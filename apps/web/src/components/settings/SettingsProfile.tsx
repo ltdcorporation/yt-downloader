@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, type ChangeEvent } from "react";
 import { Camera } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";
 
@@ -8,6 +9,9 @@ interface SettingsProfileProps {
   fullName: string;
   email: string;
   onFullNameChange: (value: string) => void;
+  onAvatarUpload: (file: File) => Promise<void> | void;
+  onAvatarRemove: () => Promise<void> | void;
+  avatarBusy?: boolean;
   onEmailChange?: (value: string) => void;
   emailReadOnly?: boolean;
 }
@@ -17,9 +21,38 @@ export default function SettingsProfile({
   fullName,
   email,
   onFullNameChange,
+  onAvatarUpload,
+  onAvatarRemove,
+  avatarBusy = false,
   onEmailChange,
   emailReadOnly = false,
 }: SettingsProfileProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const triggerFilePicker = () => {
+    if (avatarBusy) {
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    if (!selectedFile) {
+      return;
+    }
+
+    void Promise.resolve(onAvatarUpload(selectedFile));
+    event.target.value = "";
+  };
+
+  const handleRemove = () => {
+    if (avatarBusy) {
+      return;
+    }
+    void Promise.resolve(onAvatarRemove());
+  };
+
   return (
     <section className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
       <div className="p-6 border-b border-slate-200 dark:border-slate-800">
@@ -40,22 +73,40 @@ export default function SettingsProfile({
               />
             </div>
             <button
-              className="absolute bottom-0 right-0 bg-primary text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-slate-900 hover:bg-primary/90 transition-colors"
+              type="button"
+              onClick={triggerFilePicker}
+              disabled={avatarBusy}
+              className="absolute bottom-0 right-0 bg-primary text-white p-1.5 rounded-full shadow-lg border-2 border-white dark:border-slate-900 hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               aria-label="Change profile photo"
             >
               <Camera size={16} weight="fill" />
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              className="hidden"
+              onChange={handleFileChange}
+            />
           </div>
           <div className="space-y-1">
             <h4 className="font-bold">Profile Photo</h4>
-            <p className="text-sm text-slate-500">
-              JPG, GIF or PNG. Max size of 800K
-            </p>
+            <p className="text-sm text-slate-500">JPG, PNG, GIF, or WEBP. Max size 2MB.</p>
             <div className="flex gap-2 mt-2">
-              <button className="px-3 py-1.5 text-xs font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
-                Upload New
+              <button
+                type="button"
+                disabled={avatarBusy}
+                onClick={triggerFilePicker}
+                className="px-3 py-1.5 text-xs font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {avatarBusy ? "Processing..." : "Upload New"}
               </button>
-              <button className="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+              <button
+                type="button"
+                disabled={avatarBusy}
+                onClick={handleRemove}
+                className="px-3 py-1.5 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              >
                 Remove
               </button>
             </div>
@@ -85,7 +136,9 @@ export default function SettingsProfile({
               onChange={(e) => onEmailChange?.(e.target.value)}
             />
             {emailReadOnly ? (
-              <p className="text-xs text-slate-500">Email updates require a verified flow and are currently read-only.</p>
+              <p className="text-xs text-slate-500">
+                Email updates require a verified flow and are currently read-only.
+              </p>
             ) : null}
           </div>
         </div>

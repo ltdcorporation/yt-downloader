@@ -32,6 +32,7 @@ func q(query string) string {
 func expectSchemaExec(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS auth_users").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_email").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS avatar_url").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS auth_sessions").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS revoked_at").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS last_seen_at").WillReturnResult(sqlmock.NewResult(0, 0))
@@ -86,7 +87,7 @@ func TestPostgresBackend_CreateUser(t *testing.T) {
 	user := User{ID: "usr_1", FullName: "User", Email: "user@example.com", PasswordHash: "hash", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 
 	mock.ExpectExec("INSERT INTO auth_users").
-		WithArgs(user.ID, user.FullName, user.Email, user.PasswordHash, user.CreatedAt, user.UpdatedAt).
+		WithArgs(user.ID, user.FullName, user.Email, nil, user.PasswordHash, user.CreatedAt, user.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	if err := backend.CreateUser(context.Background(), user); err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
@@ -196,10 +197,10 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	backend.schemaReady = true
 
 	now := time.Now().UTC()
-	rowColumns := []string{"id", "full_name", "email", "password_hash", "created_at", "updated_at"}
-	queryByEmail := q(`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`)
-	queryByID := q(`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`)
-	queryByGoogleSubject := q(`SELECT u.id, u.full_name, u.email, u.password_hash, u.created_at, u.updated_at
+	rowColumns := []string{"id", "full_name", "email", "avatar_url", "password_hash", "created_at", "updated_at"}
+	queryByEmail := q(`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`)
+	queryByID := q(`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`)
+	queryByGoogleSubject := q(`SELECT u.id, u.full_name, u.email, u.avatar_url, u.password_hash, u.created_at, u.updated_at
 		 FROM auth_google_identities gi
 		 JOIN auth_users u ON u.id = gi.user_id
 		 WHERE gi.google_subject = $1`)
@@ -207,9 +208,14 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 		 SET full_name = $2,
 		     updated_at = $3
 		 WHERE id = $1
-		 RETURNING id, full_name, email, password_hash, created_at, updated_at`)
+		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`)
+	updateAvatarURLQuery := q(`UPDATE auth_users
+		 SET avatar_url = $2,
+		     updated_at = $3
+		 WHERE id = $1
+		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`)
 
-	rows := sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", "hash", now, now)
+	rows := sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", nil, "hash", now, now)
 	mock.ExpectQuery(queryByEmail).WithArgs("user@example.com").WillReturnRows(rows)
 	user, err := backend.GetUserByEmail(context.Background(), "user@example.com")
 	if err != nil {
@@ -224,7 +230,7 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 
-	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", "hash", now, now)
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "User", "user@example.com", nil, "hash", now, now)
 	mock.ExpectQuery(queryByID).WithArgs("usr_1").WillReturnRows(rows)
 	if _, err := backend.GetUserByID(context.Background(), "usr_1"); err != nil {
 		t.Fatalf("GetUserByID failed: %v", err)
@@ -236,7 +242,7 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	}
 
 	updateAt := now.Add(5 * time.Minute)
-	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", "hash", now, updateAt)
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", "https://avatar.indobang.site/avatars/usr_1/current.webp", "hash", now, updateAt)
 	mock.ExpectQuery(updateFullNameQuery).WithArgs("usr_1", "Renamed User", updateAt).WillReturnRows(rows)
 	updatedUser, err := backend.UpdateUserFullName(context.Background(), "usr_1", "Renamed User", updateAt)
 	if err != nil {
@@ -245,13 +251,40 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	if updatedUser.FullName != "Renamed User" {
 		t.Fatalf("unexpected updated full name: %s", updatedUser.FullName)
 	}
+	if updatedUser.AvatarURL != "https://avatar.indobang.site/avatars/usr_1/current.webp" {
+		t.Fatalf("unexpected avatar url after full name update: %s", updatedUser.AvatarURL)
+	}
 
 	mock.ExpectQuery(updateFullNameQuery).WithArgs("missing", "Renamed User", updateAt).WillReturnError(sql.ErrNoRows)
 	if _, err := backend.UpdateUserFullName(context.Background(), "missing", "Renamed User", updateAt); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound on update, got %v", err)
 	}
 
-	rows = sqlmock.NewRows(rowColumns).AddRow("usr_2", "Google", "google@example.com", "hash", now, now)
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", "https://avatar.indobang.site/avatars/usr_1/new.webp", "hash", now, updateAt)
+	mock.ExpectQuery(updateAvatarURLQuery).WithArgs("usr_1", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt).WillReturnRows(rows)
+	updatedUser, err = backend.UpdateUserAvatarURL(context.Background(), "usr_1", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt)
+	if err != nil {
+		t.Fatalf("UpdateUserAvatarURL failed: %v", err)
+	}
+	if updatedUser.AvatarURL != "https://avatar.indobang.site/avatars/usr_1/new.webp" {
+		t.Fatalf("unexpected updated avatar url: %s", updatedUser.AvatarURL)
+	}
+
+	mock.ExpectQuery(updateAvatarURLQuery).WithArgs("usr_1", nil, updateAt).WillReturnRows(sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", nil, "hash", now, updateAt))
+	updatedUser, err = backend.UpdateUserAvatarURL(context.Background(), "usr_1", "", updateAt)
+	if err != nil {
+		t.Fatalf("UpdateUserAvatarURL clear failed: %v", err)
+	}
+	if updatedUser.AvatarURL != "" {
+		t.Fatalf("expected cleared avatar url, got %q", updatedUser.AvatarURL)
+	}
+
+	mock.ExpectQuery(updateAvatarURLQuery).WithArgs("missing", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt).WillReturnError(sql.ErrNoRows)
+	if _, err := backend.UpdateUserAvatarURL(context.Background(), "missing", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on avatar update, got %v", err)
+	}
+
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_2", "Google", "google@example.com", nil, "hash", now, now)
 	mock.ExpectQuery(queryByGoogleSubject).WithArgs("sub_1").WillReturnRows(rows)
 	user, err = backend.GetUserByGoogleSubject(context.Background(), "sub_1")
 	if err != nil {

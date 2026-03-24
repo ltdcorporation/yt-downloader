@@ -46,6 +46,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("R2_KEY_PREFIX", "")
 	t.Setenv("R2_ACCESS_KEY_ID", "")
 	t.Setenv("R2_SECRET_ACCESS_KEY", "")
+	t.Setenv("AVATAR_PUBLIC_BASE_URL", "")
+	t.Setenv("AVATAR_R2_KEY_PREFIX", "")
+	t.Setenv("AVATAR_UPLOAD_MAX_BYTES", "")
+	t.Setenv("AVATAR_FFMPEG_BINARY", "")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "")
 
 	cfg := Load()
@@ -104,6 +108,18 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.GoogleClientIDs != "" {
 		t.Fatalf("unexpected GOOGLE_CLIENT_IDS default: %q", cfg.GoogleClientIDs)
 	}
+	if cfg.AvatarPublicBaseURL != "https://avatar.indobang.site" {
+		t.Fatalf("unexpected AVATAR_PUBLIC_BASE_URL default: %s", cfg.AvatarPublicBaseURL)
+	}
+	if cfg.AvatarR2KeyPrefix != "avatars" {
+		t.Fatalf("unexpected AVATAR_R2_KEY_PREFIX default: %s", cfg.AvatarR2KeyPrefix)
+	}
+	if cfg.AvatarUploadMaxBytes != 2*1024*1024 {
+		t.Fatalf("unexpected AVATAR_UPLOAD_MAX_BYTES default: %d", cfg.AvatarUploadMaxBytes)
+	}
+	if cfg.AvatarFFmpegBinary != "ffmpeg" {
+		t.Fatalf("unexpected AVATAR_FFMPEG_BINARY default: %s", cfg.AvatarFFmpegBinary)
+	}
 	if cfg.CORSAllowedOrigins != "http://127.0.0.1:3000,http://localhost:3000" {
 		t.Fatalf("unexpected default CORS origins: %s", cfg.CORSAllowedOrigins)
 	}
@@ -153,6 +169,10 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("AUTH_BCRYPT_COST", "14")
 	t.Setenv("GOOGLE_CLIENT_IDS", "web-client-id.apps.googleusercontent.com,mobile-client-id.apps.googleusercontent.com")
 	t.Setenv("R2_KEY_PREFIX", "yt-downloader/prod")
+	t.Setenv("AVATAR_PUBLIC_BASE_URL", "https://avatar.indobang.site")
+	t.Setenv("AVATAR_R2_KEY_PREFIX", "yt-downloader/prod/avatars")
+	t.Setenv("AVATAR_UPLOAD_MAX_BYTES", "3145728")
+	t.Setenv("AVATAR_FFMPEG_BINARY", "/usr/local/bin/ffmpeg")
 
 	cfg := Load()
 
@@ -242,5 +262,17 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.R2KeyPrefix != "yt-downloader/prod" {
 		t.Fatalf("unexpected R2_KEY_PREFIX override: %s", cfg.R2KeyPrefix)
+	}
+	if cfg.AvatarPublicBaseURL != "https://avatar.indobang.site" {
+		t.Fatalf("unexpected AVATAR_PUBLIC_BASE_URL override: %s", cfg.AvatarPublicBaseURL)
+	}
+	if cfg.AvatarR2KeyPrefix != "yt-downloader/prod/avatars" {
+		t.Fatalf("unexpected AVATAR_R2_KEY_PREFIX override: %s", cfg.AvatarR2KeyPrefix)
+	}
+	if cfg.AvatarUploadMaxBytes != 3145728 {
+		t.Fatalf("unexpected AVATAR_UPLOAD_MAX_BYTES override: %d", cfg.AvatarUploadMaxBytes)
+	}
+	if cfg.AvatarFFmpegBinary != "/usr/local/bin/ffmpeg" {
+		t.Fatalf("unexpected AVATAR_FFMPEG_BINARY override: %s", cfg.AvatarFFmpegBinary)
 	}
 }

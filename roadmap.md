@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-24 (History refresh + frontend sync + backend settings audit)_
+_Last update: 2026-03-24 (Avatar profile enterprise E2E: backend + frontend wiring)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -21,6 +21,7 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
 - [x] MP3 flow UI aktif di home (create job + polling + state done/failed + download)
 - [x] `/history` sudah terhubung ke API real (list/stats/redownload/delete)
 - [x] `/settings` sudah terhubung ke API real (load + patch + save/discard)
+- [x] Avatar user real sudah terpadu di UI (navbar + settings), fallback ke static default image
 - [ ] Logging analytics event resolve success/fail per platform belum ditambahkan
 - [ ] Fallback UX khusus untuk kasus auto-download diblok browser belum dipoles penuh
 
@@ -67,6 +68,7 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
 - [x] UX save/discard + dirty-state guard jalan
 - [x] Handle conflict notice (`settings_version_conflict`) di UI
 - [ ] Fallback offline/local-only mode belum dikerjakan
+- [x] Avatar upload/remove terhubung ke backend (`POST/DELETE /v1/profile/avatar`)
 
 ### F. Milestone FE-5 — X/Twitter Flow di Home (Done Baseline, Hardening Lanjut)
 
@@ -124,6 +126,7 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
 - [x] State utama konsisten (loading/disabled/success/error)
 - [x] Mobile-first tetap layak untuk viewport kecil
 - [x] Tidak ada mock data tersisa di flow MVP
+- [x] Surface user utama tidak lagi pakai avatar huruf-only placeholder
 
 ---
 
@@ -138,6 +141,8 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
   - [x] `GET /healthz`
   - [x] `GET /v1/profile`
   - [x] `PATCH /v1/profile`
+  - [x] `POST /v1/profile/avatar`
+  - [x] `DELETE /v1/profile/avatar`
   - [x] `GET /v1/settings`
   - [x] `PATCH /v1/settings`
   - [x] `POST /v1/youtube/resolve`
@@ -176,11 +181,21 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
   - [x] Optimistic concurrency (`meta.version`) aktif di `PATCH /v1/settings`
   - [x] Owner-scoped endpoint via session identity (`GET/PATCH /v1/profile`, `GET/PATCH /v1/settings`)
   - [x] Audit write untuk perubahan settings efektif (changed_fields)
+- [x] Avatar backend enterprise baseline selesai:
+  - [x] `auth_users.avatar_url` aktif (memory + postgres + schema backfill `ALTER TABLE ... IF NOT EXISTS`)
+  - [x] Endpoint auth-required aktif: `POST /v1/profile/avatar`, `DELETE /v1/profile/avatar`
+  - [x] Image normalization pipeline: center-crop + resize `512x512` + encode WebP
+  - [x] R2 public-host delivery aktif (`AVATAR_PUBLIC_BASE_URL` + `AVATAR_R2_KEY_PREFIX`)
+  - [x] Strict replace semantics aktif (delete avatar lama wajib sukses, rollback bila gagal)
 - [ ] Settings/Profile hardening (next):
   - [ ] Tambah integration test Postgres untuk `internal/settings` (CRUD + conflict + audit)
   - [ ] Pindahkan schema rollout ke migration explicit (hindari runtime DDL drift)
   - [ ] Tegaskan kontrak payload null-field (saat ini null diperlakukan sebagai field omitted)
   - [ ] Phase-2 identity flow untuk perubahan email terverifikasi
+- [ ] Avatar hardening (next):
+  - [ ] Tambah virus/malware scanning hook sebelum persist object (opsional compliance mode)
+  - [ ] Tambah endpoint rotate/default-avatar preset library (opsional UX)
+  - [ ] Tambah observability metrics (`avatar_upload_total`, `avatar_delete_fail_total`)
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
 - [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
 - [x] R2 sudah diisi config real
@@ -304,7 +319,9 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
 
 - [x] Tambah endpoint owner-scoped:
   - [x] `GET /v1/profile`
-  - [x] `PATCH /v1/profile` (phase-1: `full_name` only)
+  - [x] `PATCH /v1/profile` (phase-1: `full_name`)
+  - [x] `POST /v1/profile/avatar`
+  - [x] `DELETE /v1/profile/avatar`
   - [x] `GET /v1/settings`
   - [x] `PATCH /v1/settings`
 - [x] Default snapshot settings auto-bootstrap saat user pertama kali akses
@@ -319,7 +336,27 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
   - [ ] Endpoint read audit/settings activity (ops/support visibility)
   - [ ] Identity hardening phase-2 untuk email-change verified flow
 
-### I. Backend Quality Checklist
+### I. Milestone BE-8 — Avatar Pipeline Enterprise (Done Baseline, Hardening Lanjut)
+
+**Target:** avatar profile tidak lagi placeholder, lifecycle upload/replace/remove kuat di backend.
+
+- [x] Validasi upload avatar max `2MB`
+- [x] Normalisasi image ke `512x512` WebP (metadata implicit stripped via re-encode)
+- [x] Persist object ke R2 + publish via host publik `avatar.indobang.site`
+- [x] Replace flow strict:
+  - [x] update profile ke avatar baru
+  - [x] delete avatar lama wajib sukses
+  - [x] rollback DB + cleanup object baru saat delete lama gagal
+- [x] Remove flow strict:
+  - [x] clear avatar_url
+  - [x] delete object lama wajib sukses
+  - [x] rollback avatar_url bila delete gagal
+- [x] Full test coverage baseline aktif (unit service + handler + storage + auth/store wiring)
+- [ ] Next hardening (belum):
+  - [ ] object-level lifecycle policies untuk stale orphan edge-case
+  - [ ] image safety scanning hook
+
+### J. Backend Quality Checklist
 
 - [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
 - [x] Resolver X multi-cookie aktif + tervalidasi real-link
@@ -328,10 +365,12 @@ _Last update: 2026-03-24 (History refresh + frontend sync + backend settings aud
 - [x] False-negative direct `http-*` MP4 untuk X sudah dipatch
 - [x] History enterprise baseline aktif (write/read/redownload/delete + resolve-capture endpoint)
 - [x] Settings/Profile enterprise baseline aktif (owner-scoped endpoint + versioned patch + audit trail)
+- [x] Avatar enterprise baseline aktif (schema + endpoint + strict delete/rollback semantics)
 - [ ] Test integration Postgres untuk settings store belum ada
 - [ ] Rollout schema settings masih runtime-ensure (belum migration file)
 - [ ] Kontrak explicit reject untuk null-field patch settings belum enforced penuh
 - [ ] Parity status `resolved` antara handler enum dan constraint schema Postgres
+- [ ] Metrics observability khusus avatar pipeline belum lengkap
 - [ ] Endpoint `GET /v1/jobs/:id` owner-scoped untuk session login
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
@@ -367,6 +406,7 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa resolve TikTok non-live via `POST /v1/tiktok/resolve`
 - [x] User bisa baca/update profile dasar via `GET/PATCH /v1/profile` (owner-scoped)
 - [x] User bisa baca/update settings via `GET/PATCH /v1/settings` dengan version conflict-safe (`settings_version_conflict`)
+- [x] User bisa upload/remove avatar via `POST/DELETE /v1/profile/avatar` (owner-scoped)
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video Instagram (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video TikTok (termasuk HLS-only) 100% covered
@@ -588,3 +628,52 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] Kontrak strict reject untuk `null` pada field patch belum eksplisit (saat ini `null` diperlakukan omitted oleh decoder)
 - [ ] Endpoint baca audit settings (user/admin support view) belum ada
 - [ ] Flow perubahan email terverifikasi (phase-2 identity hardening) belum diimplementasikan
+
+
+---
+
+## 10) Delivery Notes — Avatar Profile Enterprise (2026-03-24)
+
+### A. Scope yang dikerjakan
+
+- [x] Tambah domain avatar profile end-to-end (backend + frontend)
+- [x] Backend data model:
+  - [x] `auth_users.avatar_url` aktif untuk source-of-truth profile avatar
+  - [x] Backward-safe schema ensure (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`)
+- [x] Backend API:
+  - [x] `POST /v1/profile/avatar` (multipart upload)
+  - [x] `DELETE /v1/profile/avatar`
+- [x] Processing pipeline:
+  - [x] validasi upload max `2MB`
+  - [x] normalisasi image ke WebP `512x512` (center-crop)
+  - [x] store ke R2 + URL publish via `AVATAR_PUBLIC_BASE_URL`
+- [x] Strict delete semantics:
+  - [x] replace avatar wajib hapus object lama (gagal -> rollback)
+  - [x] remove avatar wajib hapus object lama (gagal -> rollback)
+- [x] Frontend wiring:
+  - [x] settings page upload/remove profile photo real
+  - [x] navbar desktop+mobile baca avatar user real
+  - [x] fallback default image static (`/images/avatar-default.svg`)
+
+### B. Jalur pengerjaan
+
+- [x] Extend auth model + store abstraction (`UpdateUserAvatarURL`) untuk memory/postgres
+- [x] Extend storage client R2 (`UploadObject`, `DeleteObject`)
+- [x] Implement `internal/avatar` service + processor abstraction
+- [x] Tambah avatar handlers di HTTP server + route wiring profile domain
+- [x] Integrasi FE API client (`uploadProfileAvatar`, `removeProfileAvatar`) + state sync ke auth store
+
+### C. Hasil validasi
+
+- [x] Backend full-suite lulus:
+  - [x] `go test ./... -count=1`
+- [x] Frontend lint + build lulus:
+  - [x] `npm run lint`
+  - [x] `npm run build`
+- [x] Auth payload sekarang sudah carry `avatar_url` untuk response register/login/me/profile
+
+### D. Catatan batasan saat ini (Avatar)
+
+- [ ] Dedicated Postgres integration test untuk race edge-case avatar replace belum ada
+- [ ] Metrics/audit observability khusus avatar pipeline belum lengkap
+- [ ] Offline fallback upload queue belum dibangun

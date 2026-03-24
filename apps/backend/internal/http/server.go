@@ -21,11 +21,13 @@ import (
 	"golang.org/x/time/rate"
 
 	"yt-downloader/backend/internal/auth"
+	"yt-downloader/backend/internal/avatar"
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
 	"yt-downloader/backend/internal/settings"
+	"yt-downloader/backend/internal/storage"
 	"yt-downloader/backend/internal/ttresolver"
 	"yt-downloader/backend/internal/xresolver"
 	"yt-downloader/backend/internal/youtube"
@@ -74,6 +76,7 @@ type Server struct {
 	settingsStore   *settings.Store
 	authService     *auth.Service
 	settingsService *settings.Service
+	avatarService   *avatar.Service
 	origins         map[string]struct{}
 	limiter         *ipRateLimiter
 }
@@ -161,6 +164,22 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	})
 	settingsService := settings.NewService(settingsStore)
 
+	var avatarService *avatar.Service
+	r2Client, r2Err := storage.NewR2Client(context.Background(), cfg)
+	if r2Err != nil {
+		logger.Printf("warning: avatar service disabled, r2 unavailable: %v", r2Err)
+	} else {
+		avatarProcessor := avatar.NewFFmpegWebPProcessor(cfg.AvatarFFmpegBinary, avatar.DefaultTargetSize)
+		avatarService, r2Err = avatar.NewService(authStore, r2Client, avatarProcessor, avatar.Options{
+			PublicBaseURL:  cfg.AvatarPublicBaseURL,
+			KeyPrefix:      cfg.AvatarR2KeyPrefix,
+			MaxUploadBytes: cfg.AvatarUploadMaxBytes,
+		})
+		if r2Err != nil {
+			logger.Printf("warning: avatar service disabled, init failed: %v", r2Err)
+		}
+	}
+
 	return &Server{
 		cfg:             cfg,
 		logger:          logger,
@@ -175,6 +194,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		settingsStore:   settingsStore,
 		authService:     authService,
 		settingsService: settingsService,
+		avatarService:   avatarService,
 		origins:         parseAllowedOrigins(cfg.CORSAllowedOrigins),
 		limiter:         newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
@@ -224,6 +244,8 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/auth/logout", s.handleAuthLogout)
 	r.Get("/v1/profile", s.handleProfileGet)
 	r.Patch("/v1/profile", s.handleProfilePatch)
+	r.Post("/v1/profile/avatar", s.handleProfileAvatarUpload)
+	r.Delete("/v1/profile/avatar", s.handleProfileAvatarDelete)
 	r.Get("/v1/settings", s.handleSettingsGet)
 	r.Patch("/v1/settings", s.handleSettingsPatch)
 	r.Get("/v1/history", s.handleHistoryList)

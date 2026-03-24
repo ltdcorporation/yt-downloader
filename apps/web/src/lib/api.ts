@@ -111,6 +111,7 @@ export interface AuthUser {
   id: string;
   full_name: string;
   email: string;
+  avatar_url?: string;
   created_at: string;
 }
 
@@ -191,6 +192,18 @@ async function parseJSONResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function parseAPIError(response: Response): Promise<APIError> {
+  const errorPayload: { error?: string; message?: string; code?: string } =
+    await response
+      .json()
+      .catch(() => ({ error: `HTTP ${response.status}` }));
+
+  const message =
+    errorPayload?.error || errorPayload?.message || `HTTP ${response.status}`;
+
+  return new APIError(message, errorPayload?.code);
+}
+
 export async function fetcher<T>(
   endpoint: string,
   options?: RequestInit,
@@ -206,15 +219,30 @@ export async function fetcher<T>(
   });
 
   if (!response.ok) {
-    const errorPayload: { error?: string; message?: string; code?: string } =
-      await response
-        .json()
-        .catch(() => ({ error: `HTTP ${response.status}` }));
+    throw await parseAPIError(response);
+  }
 
-    const message =
-      errorPayload?.error || errorPayload?.message || `HTTP ${response.status}`;
+  return parseJSONResponse<T>(response);
+}
 
-    throw new APIError(message, errorPayload?.code);
+async function fetcherFormData<T>(
+  endpoint: string,
+  formData: FormData,
+  options?: Omit<RequestInit, "body">,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    credentials: "include",
+    ...options,
+    method: options?.method || "POST",
+    body: formData,
+    headers: {
+      Accept: "application/json",
+      ...options?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw await parseAPIError(response);
   }
 
   return parseJSONResponse<T>(response);
@@ -280,6 +308,19 @@ export const api = {
           full_name: payload.fullName,
         },
       }),
+    }),
+
+  uploadProfileAvatar: (file: File) => {
+    const formData = new FormData();
+    formData.append("avatar", file);
+    return fetcherFormData<ProfileResponse>("/v1/profile/avatar", formData, {
+      method: "POST",
+    });
+  },
+
+  removeProfileAvatar: () =>
+    fetcher<ProfileResponse>("/v1/profile/avatar", {
+      method: "DELETE",
     }),
 
   getSettings: () => fetcher<SettingsSnapshotResponse>("/v1/settings"),

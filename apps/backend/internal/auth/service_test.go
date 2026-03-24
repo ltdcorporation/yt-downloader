@@ -384,9 +384,12 @@ func TestGenerateSessionTokenAndHash(t *testing.T) {
 		t.Fatalf("expected hashToken consistency")
 	}
 
-	result := buildAuthResult(User{ID: "usr", FullName: "Name", Email: "x@example.com", CreatedAt: time.Now().UTC()}, token, time.Now().UTC())
+	result := buildAuthResult(User{ID: "usr", FullName: "Name", Email: "x@example.com", AvatarURL: "https://avatar.indobang.site/avatars/usr/avatar.webp", CreatedAt: time.Now().UTC()}, token, time.Now().UTC())
 	if result.AccessToken == "" || result.TokenType != "Bearer" {
 		t.Fatalf("unexpected auth result: %+v", result)
+	}
+	if result.User.AvatarURL != "https://avatar.indobang.site/avatars/usr/avatar.webp" {
+		t.Fatalf("expected avatar url in auth result, got %q", result.User.AvatarURL)
 	}
 
 	token2, hash2, err := generateSessionToken()
@@ -446,6 +449,47 @@ func TestService_UpdateProfile(t *testing.T) {
 	}
 }
 
+func TestService_UpdateAvatarURL(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	store := &Store{backend: &fakeBackend{
+		updateUserAvatarURLFn: func(_ context.Context, userID, avatarURL string, updatedAt time.Time) (User, error) {
+			if userID != "usr_1" {
+				t.Fatalf("unexpected userID: %s", userID)
+			}
+			if avatarURL != "https://avatar.indobang.site/avatars/usr_1/new.webp" {
+				t.Fatalf("unexpected avatarURL: %s", avatarURL)
+			}
+			if !updatedAt.Equal(now) {
+				t.Fatalf("unexpected updatedAt: %s", updatedAt)
+			}
+			return User{ID: userID, FullName: "Updated User", Email: "user@example.com", AvatarURL: avatarURL, CreatedAt: now.Add(-time.Hour), UpdatedAt: updatedAt}, nil
+		},
+	}}
+
+	svc := NewService(store, Options{})
+	svc.now = func() time.Time { return now }
+
+	updated, err := svc.UpdateAvatarURL(ctx, "usr_1", " https://avatar.indobang.site/avatars/usr_1/new.webp ")
+	if err != nil {
+		t.Fatalf("UpdateAvatarURL failed: %v", err)
+	}
+	if updated.AvatarURL != "https://avatar.indobang.site/avatars/usr_1/new.webp" {
+		t.Fatalf("unexpected updated avatar url: %q", updated.AvatarURL)
+	}
+
+	store = &Store{backend: &fakeBackend{
+		updateUserAvatarURLFn: func(context.Context, string, string, time.Time) (User, error) {
+			return User{}, ErrUserNotFound
+		},
+	}}
+	svc = NewService(store, Options{})
+	if _, err := svc.UpdateAvatarURL(ctx, "usr_missing", "https://avatar.indobang.site/avatars/usr_missing.webp"); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound, got %v", err)
+	}
+}
+
 func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -464,6 +508,9 @@ func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	}
 	if _, err := nilService.UpdateProfile(ctx, "usr", UpdateProfileInput{FullName: "Valid Name"}); err == nil {
 		t.Fatalf("expected nil service update profile error")
+	}
+	if _, err := nilService.UpdateAvatarURL(ctx, "usr", "https://avatar.indobang.site/avatars/usr.webp"); err == nil {
+		t.Fatalf("expected nil service update avatar error")
 	}
 
 	svc := newTestService(t, Options{})

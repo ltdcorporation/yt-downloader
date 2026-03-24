@@ -6,9 +6,8 @@ import { TrayArrowDown, List } from "@phosphor-icons/react";
 import LoginModal from "./LoginModal";
 import SignupModal from "./SignupModal";
 import { api, APIError } from "@/lib/api";
-import {
-  clearAuthSessionSnapshot,
-} from "@/lib/auth-session";
+import { clearAuthSessionSnapshot } from "@/lib/auth-session";
+import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import { useAuthStore } from "@/store";
 
 export default function Navbar() {
@@ -25,12 +24,9 @@ export default function Navbar() {
     logout,
   } = useAuthStore();
 
-  const userInitial = useMemo(() => {
-    if (!currentUser?.full_name) {
-      return "?";
-    }
-    return currentUser.full_name.charAt(0).toUpperCase();
-  }, [currentUser]);
+  const avatarURL = useMemo(() => {
+    return currentUser?.avatar_url || DEFAULT_AVATAR_URL;
+  }, [currentUser?.avatar_url]);
 
   const refreshAuthState = useCallback(async () => {
     try {
@@ -108,8 +104,13 @@ export default function Navbar() {
           {currentUser ? (
             <>
               <div className="flex items-center gap-2 rounded-lg border border-primary/15 px-3 py-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                  {userInitial}
+                <div className="h-7 w-7 rounded-full overflow-hidden border border-primary/20 bg-primary/5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={avatarURL}
+                    alt={`${currentUser.full_name} avatar`}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
                 <span className="max-w-[180px] truncate text-sm font-semibold text-slate-700 dark:text-slate-200">
                   {currentUser.full_name}
@@ -209,8 +210,13 @@ export default function Navbar() {
                 {currentUser ? (
                   <>
                     <div className="flex items-center gap-3 rounded-lg border border-primary/15 px-3 py-2">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                        {userInitial}
+                      <div className="h-8 w-8 rounded-full overflow-hidden border border-primary/20 bg-primary/5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={avatarURL}
+                          alt={`${currentUser.full_name} avatar`}
+                          className="h-full w-full object-cover"
+                        />
                       </div>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200">

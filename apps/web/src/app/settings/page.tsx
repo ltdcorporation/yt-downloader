@@ -23,10 +23,20 @@ import {
   type UserProfile,
 } from "@/data/settings-data";
 
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const ALLOWED_AVATAR_TYPES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]);
+
 interface ServerSnapshot {
   profile: {
     fullName: string;
     email: string;
+    avatarURL: string;
   };
   settings: SettingsFormData;
   version: number;
@@ -122,6 +132,7 @@ export default function SettingsPage() {
 
   const [profileFullName, setProfileFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
+  const [profileAvatarURL, setProfileAvatarURL] = useState("");
   const [formData, setFormData] = useState<SettingsFormData>(
     buildDefaultSettingsFormData(),
   );
@@ -132,6 +143,7 @@ export default function SettingsPage() {
 
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAvatarMutating, setIsAvatarMutating] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -190,6 +202,7 @@ export default function SettingsPage() {
         profile: {
           fullName: profileResponse.profile.full_name,
           email: profileResponse.profile.email,
+          avatarURL: profileResponse.profile.avatar_url || "",
         },
         settings: cloneFormData(nextFormData),
         version: settingsResponse.meta.version,
@@ -198,6 +211,7 @@ export default function SettingsPage() {
 
       setProfileFullName(nextSnapshot.profile.fullName);
       setProfileEmail(nextSnapshot.profile.email);
+      setProfileAvatarURL(nextSnapshot.profile.avatarURL);
       setFormData(nextFormData);
       setSettingsVersion(nextSnapshot.version);
       setServerSnapshot(nextSnapshot);
@@ -277,6 +291,7 @@ export default function SettingsPage() {
 
     setProfileFullName(serverSnapshot.profile.fullName);
     setProfileEmail(serverSnapshot.profile.email);
+    setProfileAvatarURL(serverSnapshot.profile.avatarURL);
     setFormData(cloneFormData(serverSnapshot.settings));
     setSettingsVersion(serverSnapshot.version);
     setSaveError("");
@@ -297,6 +312,7 @@ export default function SettingsPage() {
     try {
       let finalFullName = profileFullName;
       let finalEmail = profileEmail;
+      let finalAvatarURL = profileAvatarURL;
 
       if (profileFullName !== serverSnapshot.profile.fullName) {
         const profileResponse = await api.updateProfile({
@@ -304,6 +320,7 @@ export default function SettingsPage() {
         });
         finalFullName = profileResponse.profile.full_name;
         finalEmail = profileResponse.profile.email;
+        finalAvatarURL = profileResponse.profile.avatar_url || "";
         setCurrentUser(profileResponse.profile);
       }
 
@@ -328,6 +345,7 @@ export default function SettingsPage() {
         profile: {
           fullName: finalFullName,
           email: finalEmail,
+          avatarURL: finalAvatarURL,
         },
         settings: cloneFormData(finalSettings),
         version: finalVersion,
@@ -336,6 +354,7 @@ export default function SettingsPage() {
 
       setProfileFullName(finalFullName);
       setProfileEmail(finalEmail);
+      setProfileAvatarURL(finalAvatarURL);
       setFormData(finalSettings);
       setSettingsVersion(finalVersion);
       setServerSnapshot(nextSnapshot);
@@ -353,6 +372,98 @@ export default function SettingsPage() {
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    if (!serverSnapshot || isAvatarMutating) {
+      return;
+    }
+
+    if (file.type && !ALLOWED_AVATAR_TYPES.has(file.type.toLowerCase())) {
+      setSaveError("Unsupported image format. Use JPG, PNG, GIF, or WEBP.");
+      return;
+    }
+
+    if (file.size > AVATAR_MAX_BYTES) {
+      setSaveError("Profile photo exceeds 2MB. Please choose a smaller image.");
+      return;
+    }
+
+    setIsAvatarMutating(true);
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+
+    try {
+      const profileResponse = await api.uploadProfileAvatar(file);
+      const nextAvatarURL = profileResponse.profile.avatar_url || "";
+
+      setProfileAvatarURL(nextAvatarURL);
+      setCurrentUser(profileResponse.profile);
+      setServerSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile: {
+                ...prev.profile,
+                avatarURL: nextAvatarURL,
+                fullName: profileResponse.profile.full_name || prev.profile.fullName,
+                email: profileResponse.profile.email || prev.profile.email,
+              },
+            }
+          : prev,
+      );
+      setSaveSuccess("Profile photo updated.");
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Failed to upload profile photo. Please try again.",
+      );
+    } finally {
+      setIsAvatarMutating(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    if (!serverSnapshot || isAvatarMutating) {
+      return;
+    }
+
+    setIsAvatarMutating(true);
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+
+    try {
+      const profileResponse = await api.removeProfileAvatar();
+      const nextAvatarURL = profileResponse.profile.avatar_url || "";
+
+      setProfileAvatarURL(nextAvatarURL);
+      setCurrentUser(profileResponse.profile);
+      setServerSnapshot((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile: {
+                ...prev.profile,
+                avatarURL: nextAvatarURL,
+                fullName: profileResponse.profile.full_name || prev.profile.fullName,
+                email: profileResponse.profile.email || prev.profile.email,
+              },
+            }
+          : prev,
+      );
+      setSaveSuccess("Profile photo removed.");
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Failed to remove profile photo. Please try again.",
+      );
+    } finally {
+      setIsAvatarMutating(false);
     }
   };
 
@@ -385,11 +496,7 @@ export default function SettingsPage() {
     name: effectiveUserName,
     email: effectiveUserEmail,
     plan: "Free Plan",
-    avatar: effectiveUserName
-      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(
-          effectiveUserName,
-        )}&background=random`
-      : DEFAULT_AVATAR_URL,
+    avatar: profileAvatarURL || currentUser.avatar_url || DEFAULT_AVATAR_URL,
   };
 
   return (
@@ -427,6 +534,9 @@ export default function SettingsPage() {
             fullName={profileFullName}
             email={profileEmail}
             onFullNameChange={setProfileFullName}
+            onAvatarUpload={handleAvatarUpload}
+            onAvatarRemove={handleAvatarRemove}
+            avatarBusy={isAvatarMutating}
             emailReadOnly
           />
           <SettingsPreferences
@@ -444,14 +554,14 @@ export default function SettingsPage() {
           <div className="flex items-center justify-end gap-3 pt-4">
             <button
               onClick={handleDiscard}
-              disabled={!isDirty || isSaving}
+              disabled={!isDirty || isSaving || isAvatarMutating}
               className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-slate-100 transition-colors"
             >
               Discard Changes
             </button>
             <button
               onClick={handleSave}
-              disabled={!isDirty || isSaving}
+              disabled={!isDirty || isSaving || isAvatarMutating}
               className="px-8 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 transition-all"
             >
               {isSaving ? "Saving..." : "Save Preferences"}

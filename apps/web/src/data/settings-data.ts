@@ -27,8 +27,7 @@ export interface EmailAlertSettings {
   summary: boolean;
 }
 
-export const DEFAULT_AVATAR_URL =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuANDr4_pSbk5fjDd0HDrsZfvTjJZFjhn7FCp25AvDMb0TVC-6H5afnfzzYbSxpbcIJ7zoyvevJR2yAqyZUeeBE2e6ZjC2sugHkEvQCj2EBXoblXae1C1PeFlX2S_Vb5fjHY8oW3g_QkBJNlfLqjl_jPcHbhY6m2uIzle82n5OwsDEPV0jr1cdq1SJ4a4G-DT8j8YNlJpevBUBuVKfWm5d_Q4tmGPpDnt1baTHduUY4ynVRR4OG3YlEWIqzNtMLthmVoSEkfILJ1";
+export const DEFAULT_AVATAR_URL = "/images/avatar-default.svg";
 
 export const ALERT_LABELS: Record<NotificationPreferenceID, string> = {
   processing: "Processing completed successfully",

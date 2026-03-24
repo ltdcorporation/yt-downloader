@@ -12,6 +12,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.74
 	github.com/redis/go-redis/v9 v9.7.0
 	golang.org/x/crypto v0.29.0
+	golang.org/x/image v0.23.0
 	golang.org/x/time v0.8.0
 	google.golang.org/api v0.206.0
 )
@@ -48,9 +49,9 @@ require (
 	go.opentelemetry.io/otel/trace v1.29.0 // indirect
 	golang.org/x/net v0.31.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
-	golang.org/x/sync v0.9.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
 	golang.org/x/sys v0.27.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
 	google.golang.org/protobuf v1.35.2 // indirect

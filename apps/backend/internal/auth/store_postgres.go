@@ -40,10 +40,11 @@ func (p *postgresBackend) CreateUser(ctx context.Context, user User) error {
 
 	_, err := p.db.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		user.ID,
 		user.FullName,
 		user.Email,
+		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
 		user.CreatedAt,
 		user.UpdatedAt,
@@ -73,10 +74,11 @@ func (p *postgresBackend) CreateUserAndSession(ctx context.Context, user User, s
 
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		user.ID,
 		user.FullName,
 		user.Email,
+		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
 		user.CreatedAt,
 		user.UpdatedAt,
@@ -131,10 +133,11 @@ func (p *postgresBackend) CreateUserSessionAndGoogleIdentity(ctx context.Context
 
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		user.ID,
 		user.FullName,
 		user.Email,
+		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
 		user.CreatedAt,
 		user.UpdatedAt,
@@ -200,19 +203,12 @@ func (p *postgresBackend) GetUserByEmail(ctx context.Context, email string) (Use
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`,
+		`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`,
 		email,
 	)
 
-	var user User
-	if err := row.Scan(
-		&user.ID,
-		&user.FullName,
-		&user.Email,
-		&user.PasswordHash,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	); err != nil {
+	user, err := scanUserRow(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUserNotFound
 		}
@@ -229,19 +225,12 @@ func (p *postgresBackend) GetUserByID(ctx context.Context, userID string) (User,
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, full_name, email, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`,
+		`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`,
 		userID,
 	)
 
-	var user User
-	if err := row.Scan(
-		&user.ID,
-		&user.FullName,
-		&user.Email,
-		&user.PasswordHash,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	); err != nil {
+	user, err := scanUserRow(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUserNotFound
 		}
@@ -262,25 +251,46 @@ func (p *postgresBackend) UpdateUserFullName(ctx context.Context, userID, fullNa
 		 SET full_name = $2,
 		     updated_at = $3
 		 WHERE id = $1
-		 RETURNING id, full_name, email, password_hash, created_at, updated_at`,
+		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`,
 		userID,
 		fullName,
 		updatedAt.UTC(),
 	)
 
-	var user User
-	if err := row.Scan(
-		&user.ID,
-		&user.FullName,
-		&user.Email,
-		&user.PasswordHash,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	); err != nil {
+	user, err := scanUserRow(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUserNotFound
 		}
 		return User{}, fmt.Errorf("update auth user full name: %w", err)
+	}
+
+	return user, nil
+}
+
+func (p *postgresBackend) UpdateUserAvatarURL(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return User{}, err
+	}
+
+	row := p.db.QueryRowContext(
+		ctx,
+		`UPDATE auth_users
+		 SET avatar_url = $2,
+		     updated_at = $3
+		 WHERE id = $1
+		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`,
+		userID,
+		nullIfEmpty(avatarURL),
+		updatedAt.UTC(),
+	)
+
+	user, err := scanUserRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, fmt.Errorf("update auth user avatar url: %w", err)
 	}
 
 	return user, nil
@@ -293,22 +303,15 @@ func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubj
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT u.id, u.full_name, u.email, u.password_hash, u.created_at, u.updated_at
+		`SELECT u.id, u.full_name, u.email, u.avatar_url, u.password_hash, u.created_at, u.updated_at
 		 FROM auth_google_identities gi
 		 JOIN auth_users u ON u.id = gi.user_id
 		 WHERE gi.google_subject = $1`,
 		googleSubject,
 	)
 
-	var user User
-	if err := row.Scan(
-		&user.ID,
-		&user.FullName,
-		&user.Email,
-		&user.PasswordHash,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	); err != nil {
+	user, err := scanUserRow(row)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrUserNotFound
 		}
@@ -492,12 +495,14 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			full_name TEXT NOT NULL,
 			email TEXT NOT NULL UNIQUE,
+			avatar_url TEXT,
 			password_hash TEXT NOT NULL,
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		)
 		`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users (email)`,
+		`ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
 		`
 		CREATE TABLE IF NOT EXISTS auth_sessions (
 			id TEXT PRIMARY KEY,
@@ -549,6 +554,24 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 
 	p.schemaReady = true
 	return nil
+}
+
+func scanUserRow(row interface{ Scan(dest ...any) error }) (User, error) {
+	var user User
+	var avatarURL sql.NullString
+	if err := row.Scan(
+		&user.ID,
+		&user.FullName,
+		&user.Email,
+		&avatarURL,
+		&user.PasswordHash,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	); err != nil {
+		return User{}, err
+	}
+	user.AvatarURL = strings.TrimSpace(avatarURL.String)
+	return user, nil
 }
 
 func nullIfEmpty(value string) any {

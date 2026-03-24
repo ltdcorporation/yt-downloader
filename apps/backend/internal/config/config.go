@@ -56,6 +56,11 @@ type Config struct {
 	R2AccessKeyID     string
 	R2SecretAccessKey string
 
+	AvatarPublicBaseURL  string
+	AvatarR2KeyPrefix    string
+	AvatarUploadMaxBytes int64
+	AvatarFFmpegBinary   string
+
 	CORSAllowedOrigins string
 }
 
@@ -107,6 +112,10 @@ func Load() Config {
 		R2KeyPrefix:                 getenv("R2_KEY_PREFIX", ""),
 		R2AccessKeyID:               getenv("R2_ACCESS_KEY_ID", ""),
 		R2SecretAccessKey:           getenv("R2_SECRET_ACCESS_KEY", ""),
+		AvatarPublicBaseURL:         getenv("AVATAR_PUBLIC_BASE_URL", "https://avatar.indobang.site"),
+		AvatarR2KeyPrefix:           getenv("AVATAR_R2_KEY_PREFIX", "avatars"),
+		AvatarUploadMaxBytes:        getenvInt64("AVATAR_UPLOAD_MAX_BYTES", 2*1024*1024),
+		AvatarFFmpegBinary:          getenv("AVATAR_FFMPEG_BINARY", "ffmpeg"),
 		CORSAllowedOrigins:          getenv("CORS_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000"),
 	}
 }

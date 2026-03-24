@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -16,6 +18,8 @@ import (
 
 type minioObjectClient interface {
 	FPutObject(ctx context.Context, bucketName, objectName, filePath string, opts minio.PutObjectOptions) (minio.UploadInfo, error)
+	PutObject(ctx context.Context, bucketName, objectName string, reader io.Reader, objectSize int64, opts minio.PutObjectOptions) (minio.UploadInfo, error)
+	RemoveObject(ctx context.Context, bucketName, objectName string, opts minio.RemoveObjectOptions) error
 	PresignedGetObject(ctx context.Context, bucketName, objectName string, expires time.Duration, reqParams url.Values) (*url.URL, error)
 }
 
@@ -74,6 +78,45 @@ func (c *R2Client) UploadFile(ctx context.Context, key string, localPath string)
 	)
 	if err != nil {
 		return fmt.Errorf("upload object to r2: %w", err)
+	}
+	return nil
+}
+
+func (c *R2Client) UploadObject(ctx context.Context, key, contentType string, body []byte) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("r2 object key is required")
+	}
+	if len(body) == 0 {
+		return errors.New("r2 object payload is empty")
+	}
+
+	cleanContentType := strings.TrimSpace(contentType)
+	if cleanContentType == "" {
+		cleanContentType = "application/octet-stream"
+	}
+
+	reader := bytes.NewReader(body)
+	_, err := c.client.PutObject(
+		ctx,
+		c.bucket,
+		key,
+		reader,
+		int64(len(body)),
+		minio.PutObjectOptions{ContentType: cleanContentType},
+	)
+	if err != nil {
+		return fmt.Errorf("upload object bytes to r2: %w", err)
+	}
+	return nil
+}
+
+func (c *R2Client) DeleteObject(ctx context.Context, key string) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("r2 object key is required")
+	}
+
+	if err := c.client.RemoveObject(ctx, c.bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("delete object from r2: %w", err)
 	}
 	return nil
 }

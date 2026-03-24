@@ -54,6 +54,7 @@ type PublicUser struct {
 	ID        string    `json:"id"`
 	FullName  string    `json:"full_name"`
 	Email     string    `json:"email"`
+	AvatarURL string    `json:"avatar_url,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -377,6 +378,7 @@ func (s *Service) AuthenticateToken(ctx context.Context, rawToken string) (Sessi
 			ID:        user.ID,
 			FullName:  user.FullName,
 			Email:     user.Email,
+			AvatarURL: user.AvatarURL,
 			CreatedAt: user.CreatedAt,
 		},
 		SessionID: session.ID,
@@ -426,6 +428,31 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, input Update
 		ID:        user.ID,
 		FullName:  user.FullName,
 		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
+		CreatedAt: user.CreatedAt,
+	}, nil
+}
+
+func (s *Service) UpdateAvatarURL(ctx context.Context, userID, avatarURL string) (PublicUser, error) {
+	if s == nil || s.store == nil {
+		return PublicUser{}, errors.New("auth service is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return PublicUser{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	user, err := s.store.UpdateUserAvatarURL(ctx, trimmedUserID, strings.TrimSpace(avatarURL), s.now())
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	return PublicUser{
+		ID:        user.ID,
+		FullName:  user.FullName,
+		Email:     user.Email,
+		AvatarURL: user.AvatarURL,
 		CreatedAt: user.CreatedAt,
 	}, nil
 }
@@ -490,6 +517,7 @@ func buildAuthResult(user User, token string, expiresAt time.Time) AuthResult {
 			ID:        user.ID,
 			FullName:  user.FullName,
 			Email:     user.Email,
+			AvatarURL: user.AvatarURL,
 			CreatedAt: user.CreatedAt,
 		},
 		AccessToken: token,

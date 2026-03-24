@@ -28,6 +28,7 @@ type User struct {
 	ID           string
 	FullName     string
 	Email        string
+	AvatarURL    string
 	PasswordHash string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -64,6 +65,7 @@ type backend interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, userID string) (User, error)
 	UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
+	UpdateUserAvatarURL(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error)
 	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
@@ -153,6 +155,24 @@ func (s *Store) UpdateUserFullName(ctx context.Context, userID, fullName string,
 		updatedAt = time.Now().UTC()
 	}
 	return s.backend.UpdateUserFullName(ctx, trimmedUserID, trimmedFullName, updatedAt.UTC())
+}
+
+func (s *Store) UpdateUserAvatarURL(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return User{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	trimmedAvatarURL := strings.TrimSpace(avatarURL)
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+
+	return s.backend.UpdateUserAvatarURL(ctx, trimmedUserID, trimmedAvatarURL, updatedAt.UTC())
 }
 
 func (s *Store) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {

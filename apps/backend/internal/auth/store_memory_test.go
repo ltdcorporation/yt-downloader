@@ -45,12 +45,30 @@ func TestMemoryBackend_UserAndSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound on update missing user, got %v", err)
 	}
 
+	avatarUpdatedAt := updatedAt.Add(time.Minute)
+	updatedUser, err = backend.UpdateUserAvatarURL(ctx, user.ID, "https://avatar.indobang.site/avatars/usr_1/new.webp", avatarUpdatedAt)
+	if err != nil {
+		t.Fatalf("UpdateUserAvatarURL failed: %v", err)
+	}
+	if updatedUser.AvatarURL != "https://avatar.indobang.site/avatars/usr_1/new.webp" {
+		t.Fatalf("unexpected updated avatar url: %q", updatedUser.AvatarURL)
+	}
+	if !updatedUser.UpdatedAt.Equal(avatarUpdatedAt) {
+		t.Fatalf("unexpected avatar updated timestamp: got %s want %s", updatedUser.UpdatedAt, avatarUpdatedAt)
+	}
+	if _, err := backend.UpdateUserAvatarURL(ctx, "usr_missing", "https://avatar.indobang.site/avatars/missing.webp", avatarUpdatedAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on avatar update missing user, got %v", err)
+	}
+
 	gotUser, err := backend.GetUserByEmail(ctx, user.Email)
 	if err != nil {
 		t.Fatalf("GetUserByEmail failed: %v", err)
 	}
 	if gotUser.ID != user.ID {
 		t.Fatalf("unexpected user id: %s", gotUser.ID)
+	}
+	if gotUser.AvatarURL != "https://avatar.indobang.site/avatars/usr_1/new.webp" {
+		t.Fatalf("expected persisted avatar url, got %q", gotUser.AvatarURL)
 	}
 
 	session := Session{ID: "ses_1", UserID: user.ID, TokenHash: "hash_1", ExpiresAt: time.Now().Add(time.Hour)}

@@ -106,6 +106,8 @@ GET  /v1/auth/me            (Bearer token or HttpOnly session cookie)
 POST /v1/auth/logout        (idempotent; revokes active session)
 GET  /v1/profile
 PATCH /v1/profile           { profile: { full_name } }
+POST /v1/profile/avatar     multipart/form-data { avatar }
+DELETE /v1/profile/avatar
 GET  /v1/settings
 PATCH /v1/settings          { settings: {...}, meta: { version } }
 POST /v1/youtube/resolve    { url }
@@ -126,7 +128,11 @@ GET  /admin/jobs            (basic auth)
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
 - Auth endpoints issue cryptographically random session tokens, persist only token hash in storage, and set HttpOnly cookie (`AUTH_SESSION_COOKIE_*` vars).
-- Profile endpoint currently supports full-name updates only; email remains identity-managed.
+- Profile domain now supports avatar lifecycle on top of full-name updates:
+  - `POST /v1/profile/avatar` accepts image upload (JPG/PNG/GIF/WEBP, max 2MB), normalizes to `512x512` WebP, stores to R2, and returns `profile.avatar_url`.
+  - `DELETE /v1/profile/avatar` clears profile photo and hard-deletes managed object key from R2.
+- Avatar public delivery is controlled by `AVATAR_PUBLIC_BASE_URL` + `AVATAR_R2_KEY_PREFIX` and uses strict replace semantics (old object delete failure aborts update).
+- Email remains identity-managed.
 - Settings endpoint uses optimistic concurrency (`meta.version`) and returns `settings_version_conflict` on stale writes.
 - Google login endpoint (`/v1/auth/google`) validates Google ID token server-side; set `GOOGLE_CLIENT_IDS` (comma-separated) or `GOOGLE_CLIENT_ID`.
 - Frontend Google flow requires `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (must match one audience accepted by backend).
