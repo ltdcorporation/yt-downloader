@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-24 (History backend enterprise refresh + frontend checklist sync)_
+_Last update: 2026-03-24 (History refresh + frontend sync + backend settings audit)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -136,6 +136,10 @@ _Last update: 2026-03-24 (History backend enterprise refresh + frontend checklis
 - [x] API bind internal-only `127.0.0.1:18080`
 - [x] Endpoint MVP aktif:
   - [x] `GET /healthz`
+  - [x] `GET /v1/profile`
+  - [x] `PATCH /v1/profile`
+  - [x] `GET /v1/settings`
+  - [x] `PATCH /v1/settings`
   - [x] `POST /v1/youtube/resolve`
   - [x] `POST /v1/x/resolve`
   - [x] `POST /v1/instagram/resolve` (alias: `POST /v1/ig/resolve`)
@@ -166,6 +170,17 @@ _Last update: 2026-03-24 (History backend enterprise refresh + frontend checklis
 - [ ] History backend enterprise **Phase 4 hardening** (next):
   - [ ] Sinkronkan constraint schema Postgres agar status `resolved` diterima native
   - [ ] Tambah integration test Postgres untuk jalur `POST /v1/history`
+- [x] Settings/Profile backend enterprise baseline selesai:
+  - [x] Store layer `internal/settings` (memory + postgres)
+  - [x] Auto schema bootstrap tabel `user_settings` + `user_settings_audit`
+  - [x] Optimistic concurrency (`meta.version`) aktif di `PATCH /v1/settings`
+  - [x] Owner-scoped endpoint via session identity (`GET/PATCH /v1/profile`, `GET/PATCH /v1/settings`)
+  - [x] Audit write untuk perubahan settings efektif (changed_fields)
+- [ ] Settings/Profile hardening (next):
+  - [ ] Tambah integration test Postgres untuk `internal/settings` (CRUD + conflict + audit)
+  - [ ] Pindahkan schema rollout ke migration explicit (hindari runtime DDL drift)
+  - [ ] Tegaskan kontrak payload null-field (saat ini null diperlakukan sebagai field omitted)
+  - [ ] Phase-2 identity flow untuk perubahan email terverifikasi
 - [x] Jobs store via PostgreSQL (fallback Redis saat DSN kosong)
 - [x] Worker service aktif permanen (`ytd-worker.service` enabled + running)
 - [x] R2 sudah diisi config real
@@ -283,7 +298,28 @@ _Last update: 2026-03-24 (History backend enterprise refresh + frontend checklis
   - [ ] fallback HLS remux (`m3u8` -> mp4) untuk post TikTok yang tidak punya direct MP4
   - [ ] ranking cookie profile berdasarkan success-rate
 
-### H. Backend Quality Checklist
+### H. Milestone BE-7 — Settings + Profile Enterprise (Done Baseline, Hardening Lanjut)
+
+**Target:** user login bisa update profile dasar + settings secara conflict-safe dan auditable.
+
+- [x] Tambah endpoint owner-scoped:
+  - [x] `GET /v1/profile`
+  - [x] `PATCH /v1/profile` (phase-1: `full_name` only)
+  - [x] `GET /v1/settings`
+  - [x] `PATCH /v1/settings`
+- [x] Default snapshot settings auto-bootstrap saat user pertama kali akses
+- [x] Optimistic concurrency aktif via `meta.version` + error code `settings_version_conflict`
+- [x] Audit trail settings mutation tersimpan di `user_settings_audit` (before/after + changed_fields)
+- [x] Validation contract dasar:
+  - [x] unknown JSON field ditolak (`DisallowUnknownFields`)
+  - [x] enum `default_quality` tervalidasi (`4k/1080p/720p/480p`)
+- [ ] Next hardening (belum):
+  - [ ] Tambah test integration Postgres khusus settings store
+  - [ ] Migrasi skema settings ke migration file explicit
+  - [ ] Endpoint read audit/settings activity (ops/support visibility)
+  - [ ] Identity hardening phase-2 untuk email-change verified flow
+
+### I. Backend Quality Checklist
 
 - [x] Full-suite backend test runner tersedia (`make backend-test` / `scripts/test-backend.sh`) dengan coverage output
 - [x] Resolver X multi-cookie aktif + tervalidasi real-link
@@ -291,6 +327,10 @@ _Last update: 2026-03-24 (History backend enterprise refresh + frontend checklis
 - [x] Resolver TikTok multi-cookie aktif + tervalidasi test-suite
 - [x] False-negative direct `http-*` MP4 untuk X sudah dipatch
 - [x] History enterprise baseline aktif (write/read/redownload/delete + resolve-capture endpoint)
+- [x] Settings/Profile enterprise baseline aktif (owner-scoped endpoint + versioned patch + audit trail)
+- [ ] Test integration Postgres untuk settings store belum ada
+- [ ] Rollout schema settings masih runtime-ensure (belum migration file)
+- [ ] Kontrak explicit reject untuk null-field patch settings belum enforced penuh
 - [ ] Parity status `resolved` antara handler enum dan constraint schema Postgres
 - [ ] Endpoint `GET /v1/jobs/:id` owner-scoped untuk session login
 - [ ] Semua dependency runtime tervalidasi saat startup
@@ -325,6 +365,8 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa resolve X/Twitter non-live via `POST /v1/x/resolve`
 - [x] User bisa resolve Instagram non-live via `POST /v1/instagram/resolve`
 - [x] User bisa resolve TikTok non-live via `POST /v1/tiktok/resolve`
+- [x] User bisa baca/update profile dasar via `GET/PATCH /v1/profile` (owner-scoped)
+- [x] User bisa baca/update settings via `GET/PATCH /v1/settings` dengan version conflict-safe (`settings_version_conflict`)
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video Instagram (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video TikTok (termasuk HLS-only) 100% covered
@@ -498,3 +540,51 @@ MVP dianggap siap kalau semua checklist ini true:
 
 - [ ] Analytics event FE (success/fail resolve per platform) belum ditambahkan
 - [ ] Untuk URL yang tidak terdeteksi platform, UI tetap return error `Unsupported or invalid social media URL.`
+
+---
+
+## 9) Delivery Notes — Backend Settings + Profile Enterprise (2026-03-23 implementasi, 2026-03-24 audit)
+
+### A. Scope yang dikerjakan
+
+- [x] Blueprint enterprise ditulis dulu via RFC (`docs/settings-enterprise-rfc.md`)
+- [x] Endpoint auth-required untuk domain profile/settings:
+  - [x] `GET /v1/profile`
+  - [x] `PATCH /v1/profile` (phase-1: update `full_name`)
+  - [x] `GET /v1/settings`
+  - [x] `PATCH /v1/settings`
+- [x] Modul backend baru `internal/settings` (service + store abstraction)
+- [x] Store engine ganda settings:
+  - [x] in-memory backend (dev/fallback)
+  - [x] postgres backend (prod path)
+- [x] Mekanisme optimistic concurrency untuk settings (`meta.version` + conflict 409)
+- [x] Audit trail perubahan settings ke `user_settings_audit` (before/after + changed_fields)
+
+### B. Jalur pengerjaan
+
+- [x] Phase design dulu, baru implementation:
+  - [x] RFC baseline masuk (`89d5c74`)
+  - [x] Implementasi API + store + wiring frontend masuk (`c2a5eb9`)
+- [x] Route wiring di `internal/http/server.go` + handler dedicated `settings_handlers.go`
+- [x] Owner scope dipastikan lewat `requireSessionIdentity` (user_id diambil dari session, bukan payload)
+- [x] Schema tabel settings dibuat otomatis oleh backend saat startup akses store (runtime ensure-schema)
+
+### C. Hasil validasi
+
+- [x] First-read behavior: user baru langsung dapat snapshot default settings (version=1)
+- [x] Patch behavior:
+  - [x] update sukses menaikkan `version` (+1)
+  - [x] stale version menghasilkan `settings_version_conflict` (HTTP 409)
+  - [x] no-op patch tidak bikin bump version/audit baru
+- [x] Profile mutation phase-1 jalan untuk `full_name` dengan validasi panjang minimum/maksimum
+- [x] Test suite terkait settings/profile lulus di scope sekarang:
+  - [x] `go test ./internal/settings ./internal/http -count=1`
+  - [x] snapshot lokal coverage: `internal/settings ~49.5%`, `internal/http ~81.3%`
+
+### D. Catatan batasan saat ini (Settings BE)
+
+- [ ] Belum ada integration test Postgres khusus `internal/settings` (termasuk race/conflict + audit insert)
+- [ ] Rollout schema masih runtime DDL (`ensureSchema`), belum migration file explicit
+- [ ] Kontrak strict reject untuk `null` pada field patch belum eksplisit (saat ini `null` diperlakukan omitted oleh decoder)
+- [ ] Endpoint baca audit settings (user/admin support view) belum ada
+- [ ] Flow perubahan email terverifikasi (phase-2 identity hardening) belum diimplementasikan
