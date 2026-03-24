@@ -366,6 +366,69 @@ func TestAvatarHandler_WriteAvatarMutationErrorBranches(t *testing.T) {
 	}
 }
 
+func TestProfileAvatarDelete_UnauthorizedBranch(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+	installAvatarService(t, server, &testAvatarObjectStore{}, testAvatarProcessor{out: []byte("webp-bytes")})
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/profile/avatar", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 unauthorized, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReadAvatarPayload_Branches(t *testing.T) {
+	cfg := baseTestConfig()
+	cfg.AvatarUploadMaxBytes = 4
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+
+	t.Run("maxBytes from config + limitreader too large branch", func(t *testing.T) {
+		req := buildAvatarMultipartRequest(t, "/v1/profile/avatar", []byte("abcdef"), true)
+		if err := req.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("pre-parse multipart form: %v", err)
+		}
+		files := req.MultipartForm.File[avatarFormFieldName]
+		if len(files) == 0 {
+			t.Fatalf("missing avatar file header")
+		}
+		files[0].Size = 0 // bypass header-size guard and hit len(payload)>maxBytes branch
+
+		rec := httptest.NewRecorder()
+		_, err := server.readAvatarPayload(rec, req)
+		if !errors.Is(err, avatar.ErrPayloadTooLarge) {
+			t.Fatalf("expected ErrPayloadTooLarge, got %v", err)
+		}
+	})
+
+	t.Run("empty payload branch", func(t *testing.T) {
+		req := buildAvatarMultipartRequest(t, "/v1/profile/avatar", []byte{}, true)
+		rec := httptest.NewRecorder()
+		_, err := server.readAvatarPayload(rec, req)
+		if !errors.Is(err, avatar.ErrPayloadEmpty) {
+			t.Fatalf("expected ErrPayloadEmpty, got %v", err)
+		}
+	})
+}
+
+func TestAvatarHandler_NilErrorGuards(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+
+	recPayload := httptest.NewRecorder()
+	server.writeAvatarPayloadError(recPayload, nil)
+	if recPayload.Body.Len() != 0 {
+		t.Fatalf("expected no payload when err=nil, got body=%s", recPayload.Body.String())
+	}
+
+	recMutation := httptest.NewRecorder()
+	server.writeAvatarMutationError(recMutation, "usr_1", "upload", nil)
+	if recMutation.Body.Len() != 0 {
+		t.Fatalf("expected no mutation payload when err=nil, got body=%s", recMutation.Body.String())
+	}
+}
+
 func anyToString(v any) string {
 	s, _ := v.(string)
 	return s
