@@ -12,7 +12,6 @@ import {
   X,
   ArrowLeft,
   ShieldCheck,
-  ChartBar,
   Users,
 } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";

@@ -10,7 +10,6 @@ import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import {
   Layout,
   Users,
-  ChartBar,
   Gear,
   Plus,
   SignOut,
@@ -34,6 +33,7 @@ import {
   ShieldCheck,
   CaretLeft,
   CaretRight,
+  Wrench,
 } from "@phosphor-icons/react";
 
 interface UserData {
@@ -234,10 +234,10 @@ export default function AdminUsersPage() {
       active: pathname === "/admin/users",
     },
     {
-      icon: ChartBar,
-      label: "Analytics",
-      href: "/admin/analytics",
-      active: pathname === "/admin/analytics",
+      icon: Wrench,
+      label: "Maintenance",
+      href: "/admin/maintenance",
+      active: pathname === "/admin/maintenance",
     },
     {
       icon: Gear,

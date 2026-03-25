@@ -19,7 +19,7 @@ import {
   EnvelopeSimple,
   CheckCircle,
   Users,
-  ChartBar,
+  Wrench,
   Gear,
 } from "@phosphor-icons/react";
 
@@ -199,10 +199,10 @@ export default function AdminDashboardPage() {
       active: pathname === "/admin/users",
     },
     {
-      icon: ChartBar,
-      label: "Analytics",
-      href: "/admin/analytics",
-      active: pathname === "/admin/analytics",
+      icon: Wrench,
+      label: "Maintenance",
+      href: "/admin/maintenance",
+      active: pathname === "/admin/maintenance",
     },
     {
       icon: Gear,
