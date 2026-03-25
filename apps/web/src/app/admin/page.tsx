@@ -4,17 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
+import SettingsSidebar from "@/components/settings/SettingsSidebar";
+import SettingsHeader from "@/components/settings/SettingsHeader";
+import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import {
-  TrayArrowDown,
   Layout,
-  Users,
-  ChartBar,
-  Gear,
-  Plus,
-  SignOut,
-  MagnifyingGlass,
-  Bell,
-  Question,
   User,
   SealCheck,
   DownloadSimple,
@@ -120,8 +114,6 @@ export default function AdminDashboardPage() {
 
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeNavItem, setActiveNavItem] = useState("dashboard");
 
   const refreshAuthState = useCallback(async () => {
     try {
@@ -161,10 +153,6 @@ export default function AdminDashboardPage() {
     router.push("/");
   };
 
-  const handleNewReport = () => {
-    console.log("New report");
-  };
-
   const handleViewAllActivity = () => {
     console.log("View all activity");
   };
@@ -175,7 +163,7 @@ export default function AdminDashboardPage() {
 
   if (isAuthChecking || isPageLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface-container-lowest dark:bg-slate-950">
+      <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
@@ -185,19 +173,19 @@ export default function AdminDashboardPage() {
     return null;
   }
 
-  const navItems = [
-    { id: "dashboard", icon: Layout, label: "Dashboard", active: true },
-    { id: "users", icon: Users, label: "Users", active: false },
-    { id: "analytics", icon: ChartBar, label: "Analytics", active: false },
-    { id: "settings", icon: Gear, label: "Settings", active: false },
-  ];
+  const userProfile = {
+    name: currentUser.full_name,
+    email: currentUser.email,
+    plan: "Super Admin",
+    avatar: currentUser.avatar_url || DEFAULT_AVATAR_URL,
+  };
 
   const getBadgeStyles = (type: ActivityItem["type"]) => {
     switch (type) {
       case "user":
         return "bg-primary/10 text-primary";
       case "alert":
-        return "bg-error/10 text-error";
+        return "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400";
       case "system":
         return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
       case "marketing":
@@ -219,141 +207,24 @@ export default function AdminDashboardPage() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background dark:bg-slate-950">
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-surface-container-low dark:bg-slate-950 flex flex-col p-4 space-y-2 transition-transform duration-300 ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-      >
-        <div className="px-2 py-4 flex items-center space-x-3 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-            <TrayArrowDown size={24} weight="fill" className="text-white" />
-          </div>
-          <div>
-            <h1 className="font-black text-slate-900 dark:text-slate-50 tracking-tighter">
-              QuickSnap
-            </h1>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              Admin Console
-            </p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveNavItem(item.id)}
-              className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-all duration-150 ease-in-out ${
-                item.active
-                  ? "bg-primary/10 text-primary font-bold"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900"
-              }`}
-            >
-              <item.icon size={20} weight={item.active ? "fill" : "regular"} />
-              <span className="text-sm">{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-          <button
-            onClick={handleNewReport}
-            className="w-full bg-primary text-white py-2 rounded-lg font-bold text-sm shadow-lg shadow-primary/20 active:scale-95 transition-all flex items-center justify-center space-x-2"
-          >
-            <Plus size={18} weight="bold" />
-            <span>New Report</span>
-          </button>
-          <button
-            onClick={handleLogout}
-            className="mt-4 w-full flex items-center space-x-3 px-4 py-2.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 transition-all duration-150"
-          >
-            <SignOut size={20} />
-            <span className="text-sm">Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+    <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark">
+      <SettingsSidebar
+        user={userProfile}
+        onLogout={handleLogout}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
 
       {/* Main Content */}
-      <main className="flex-1 ml-0 lg:ml-64 min-h-screen">
-        {/* Top App Bar */}
-        <header className="fixed top-0 right-0 left-0 lg:left-64 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40 px-6 flex justify-between items-center shadow-sm">
-          <div className="flex items-center space-x-4">
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors"
-              aria-label="Open menu"
-            >
-              <Layout size={24} />
-            </button>
-
-            {/* Search Bar */}
-            <div className="relative group">
-              <span className="absolute inset-y-0 left-3 flex items-center text-slate-400">
-                <MagnifyingGlass size={20} weight="bold" />
-              </span>
-              <input
-                className="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary/50 w-48 sm:w-64 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-400"
-                placeholder="Search data points..."
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            {/* Notifications */}
-            <button className="p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors relative">
-              <Bell size={24} />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
-            </button>
-
-            {/* Help */}
-            <button className="p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors">
-              <Question size={24} />
-            </button>
-
-            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
-
-            {/* User Profile */}
-            <div className="flex items-center space-x-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-xs font-black text-slate-900 dark:text-slate-100">
-                  {currentUser.full_name}
-                </p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                  Super Admin
-                </p>
-              </div>
-              <div className="w-10 h-10 rounded-full border-2 border-white dark:border-slate-700 shadow-sm bg-primary/10 flex items-center justify-center overflow-hidden">
-                {currentUser.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={currentUser.avatar_url}
-                    alt={currentUser.full_name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <User size={24} className="text-primary" />
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+      <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
+        <SettingsHeader
+          onMenuClick={() => setIsSidebarOpen(true)}
+          title="Admin Console"
+          showText={false}
+        />
 
         {/* Content Canvas */}
-        <div className="pt-24 px-4 sm:px-8 pb-12">
+        <div className="max-w-6xl mx-auto pt-4 px-4 sm:px-8 pb-12">
           {/* Header Section */}
           <div className="mb-8">
             <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-50">
@@ -369,26 +240,43 @@ export default function AdminDashboardPage() {
             {MOCK_METRICS.map((metric) => (
               <div
                 key={metric.id}
-                className="bg-surface dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all group"
+                className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 transition-all hover:shadow-md group"
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                  <div className="p-2 bg-primary/10 rounded-lg text-primary group-hover:bg-primary group-hover:text-white transition-colors">
                     <metric.icon size={24} weight="fill" />
                   </div>
-                  <span
-                    className={`text-xs font-bold px-2 py-1 rounded ${getTrendBadgeStyles(
-                      metric.trendDirection
-                    )}`}
-                  >
-                    {metric.trend}
-                  </span>
+                  <div className="flex flex-col items-end">
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${getTrendBadgeStyles(
+                        metric.trendDirection
+                      )}`}
+                    >
+                      {metric.trend}
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-bold mt-1 uppercase">vs last week</span>
+                  </div>
                 </div>
-                <h3 className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">
-                  {metric.title}
-                </h3>
-                <p className="text-2xl font-black text-slate-900 dark:text-slate-50">
-                  {metric.value}
-                </p>
+                <div className="space-y-1">
+                  <h3 className="text-slate-500 dark:text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                    {metric.title}
+                  </h3>
+                  <div className="flex items-end justify-between">
+                    <p className="text-2xl font-black text-slate-900 dark:text-slate-50 tabular-nums">
+                      {metric.value}
+                    </p>
+                    {/* Simulated Sparkline */}
+                    <div className="flex items-end gap-0.5 h-8 mb-1">
+                      {[40, 70, 45, 90, 65, 80, 50].map((h, i) => (
+                        <div 
+                          key={i} 
+                          className="w-1 bg-primary/20 rounded-full" 
+                          style={{ height: `${h}%` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -398,59 +286,67 @@ export default function AdminDashboardPage() {
             {/* Activity Feed (Left 2/3) */}
             <div className="lg:col-span-2 space-y-6">
               {/* Recent Activity */}
-              <div className="bg-surface dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                  <h3 className="font-bold text-slate-900 dark:text-slate-50">
-                    Recent Activity
-                  </h3>
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
+                  <div className="flex items-center gap-2">
+                    <div className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <h3 className="font-bold text-slate-900 dark:text-slate-50">
+                      Live Activity Feed
+                    </h3>
+                  </div>
                   <button
                     onClick={handleViewAllActivity}
-                    className="text-xs font-bold text-primary hover:underline"
+                    className="text-xs font-bold text-primary hover:text-primary/80 transition-colors"
                   >
-                    View All
+                    View Full Audit Log
                   </button>
                 </div>
-                <div className="divide-y divide-slate-50 dark:divide-slate-800">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {MOCK_ACTIVITIES.map((item) => (
                     <div
                       key={item.id}
-                      className="p-4 flex items-center space-x-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                      className="p-4 flex items-center space-x-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all group"
                     >
-                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
                         {item.type === "user" && (
-                          <UserCirclePlus size={20} className="text-slate-500" />
+                          <UserCirclePlus size={20} className="text-blue-500" />
                         )}
                         {item.type === "alert" && (
-                          <Warning size={20} className="text-slate-500" />
+                          <Warning size={20} className="text-rose-500" />
                         )}
                         {item.type === "system" && (
-                          <CloudArrowDown size={20} className="text-slate-500" />
+                          <CloudArrowDown size={20} className="text-emerald-500" />
                         )}
                         {item.type === "marketing" && (
-                          <EnvelopeSimple size={20} className="text-slate-500" />
+                          <EnvelopeSimple size={20} className="text-amber-500" />
                         )}
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-900 dark:text-slate-50">
-                          {item.title}
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-50 truncate">
+                            {item.title}
+                          </p>
+                          {item.badge && (
+                            <span
+                              className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${getBadgeStyles(
+                                item.type
+                              )}`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
                           {item.description}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-[10px] font-bold text-slate-400">
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">
                           {item.time}
                         </p>
-                        {item.badge && (
-                          <span
-                            className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${getBadgeStyles(
-                              item.type
-                            )}`}
-                          >
-                            {item.badge}
-                          </span>
-                        )}
+                        <button className="text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                          Details →
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -458,48 +354,49 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Weekly Growth Trends Chart */}
-              <div className="bg-surface dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-bold text-slate-900 dark:text-slate-50">
-                    Weekly Growth Trends
-                  </h3>
-                  <div className="flex space-x-4">
-                    <span className="flex items-center space-x-1">
-                      <span className="w-3 h-3 rounded-full bg-primary"></span>
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                        Pro Users
-                      </span>
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                <div className="flex justify-between items-center mb-8">
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-slate-50">
+                      Weekly Growth Trends
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">User Acquisition</p>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <span className="flex items-center gap-2">
+                      <div className="size-2 rounded-full bg-primary" />
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Pro</span>
                     </span>
-                    <span className="flex items-center space-x-1">
-                      <span className="w-3 h-3 rounded-full bg-slate-200 dark:bg-slate-700"></span>
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                        Free Tier
-                      </span>
+                    <span className="flex items-center gap-2">
+                      <div className="size-2 rounded-full bg-slate-200 dark:bg-slate-700" />
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Free</span>
                     </span>
                   </div>
                 </div>
-                <div className="flex-1 flex items-end justify-between space-x-2 h-48">
+                <div className="flex items-end justify-between gap-2 h-48 px-2">
                   {[
-                    { free: 24, pro: 12 },
-                    { free: 28, pro: 16 },
-                    { free: 20, pro: 8 },
-                    { free: 24, pro: 20 },
-                    { free: 32, pro: 24 },
-                    { free: 28, pro: 18 },
-                    { free: 30, pro: 22 },
+                    { label: "Mon", free: 40, pro: 20 },
+                    { label: "Tue", free: 45, pro: 25 },
+                    { label: "Wed", free: 35, pro: 15 },
+                    { label: "Thu", free: 50, pro: 35 },
+                    { label: "Fri", free: 60, pro: 45 },
+                    { label: "Sat", free: 55, pro: 30 },
+                    { label: "Sun", free: 58, pro: 40 },
                   ].map((bar, index) => (
-                    <div
-                      key={index}
-                      className="w-full bg-slate-50 dark:bg-slate-800 rounded-t-sm relative group h-32"
-                    >
-                      <div
-                        className="absolute bottom-0 w-full bg-slate-200 dark:bg-slate-700 rounded-t-sm group-hover:bg-slate-300 dark:group-hover:bg-slate-600 transition-colors"
-                        style={{ height: `${bar.free}%` }}
-                      ></div>
-                      <div
-                        className="absolute bottom-0 w-full bg-primary rounded-t-sm transition-all"
-                        style={{ height: `${bar.pro}%` }}
-                      ></div>
+                    <div key={index} className="flex-1 flex flex-col items-center gap-2 h-full group">
+                      <div className="w-full max-w-[32px] flex-1 bg-slate-50 dark:bg-slate-800/50 rounded-t-lg relative overflow-hidden">
+                        {/* Free Bar */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-slate-200 dark:bg-slate-700 transition-all duration-500 group-hover:bg-slate-300"
+                          style={{ height: `${bar.free}%` }}
+                        />
+                        {/* Pro Bar */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-primary transition-all duration-700 delay-100 group-hover:brightness-110"
+                          style={{ height: `${bar.pro}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{bar.label}</span>
                     </div>
                   ))}
                 </div>
@@ -509,140 +406,100 @@ export default function AdminDashboardPage() {
             {/* Secondary Column (Right 1/3) */}
             <div className="space-y-6">
               {/* Plan Distribution */}
-              <div className="bg-surface dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 p-6">
-                <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-6">
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-8">
                   Plan Distribution
                 </h3>
-                <div className="relative w-40 h-40 mx-auto mb-8">
+                <div className="relative w-44 h-44 mx-auto mb-10">
                   <svg
-                    className="w-full h-full transform -rotate-90"
+                    className="w-full h-full transform -rotate-90 filter drop-shadow-sm"
                     viewBox="0 0 36 36"
                   >
-                    <path
-                      className="text-slate-100 dark:text-slate-800"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="text-primary"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeDasharray="65, 100"
-                      strokeLinecap="round"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="text-slate-300 dark:text-slate-700"
-                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeDasharray="15, 100"
-                      strokeDashoffset="-65"
-                      strokeLinecap="round"
-                      strokeWidth="4"
-                    />
+                    <circle cx="18" cy="18" r="16" fill="transparent" stroke="currentColor" strokeWidth="3" className="text-slate-100 dark:text-slate-800" />
+                    <circle cx="18" cy="18" r="16" fill="transparent" stroke="currentColor" strokeWidth="3" strokeDasharray="65, 100" strokeLinecap="round" className="text-primary" />
+                    <circle cx="18" cy="18" r="16" fill="transparent" stroke="currentColor" strokeWidth="3" strokeDasharray="15, 100" strokeDashoffset="-65" strokeLinecap="round" className="text-slate-400" />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-xl font-black text-slate-900 dark:text-slate-50">
+                    <span className="text-3xl font-black text-slate-900 dark:text-slate-50 tracking-tighter">
                       85%
                     </span>
-                    <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                      Growth
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <div className="size-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                        HEALTHY
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 rounded-full bg-primary"></span>
-                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                        Pro Plan
+                <div className="space-y-4">
+                  {[
+                    { label: "Pro Plan", value: "65%", color: "bg-primary" },
+                    { label: "Lite Plan", value: "15%", color: "bg-slate-400" },
+                    { label: "Free Tier", value: "20%", color: "bg-slate-200 dark:bg-slate-700" },
+                  ].map((p, i) => (
+                    <div key={i} className="flex justify-between items-center group cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <div className={`size-2.5 rounded-sm ${p.color}`} />
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-slate-200 transition-colors">
+                          {p.label}
+                        </span>
+                      </div>
+                      <span className="text-xs font-black text-slate-900 dark:text-slate-50 tabular-nums">
+                        {p.value}
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-50">
-                      65%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700"></span>
-                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                        Lite Plan
-                      </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* System Health */}
+              <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-slate-900 dark:text-slate-50">
+                    System Health
+                  </h3>
+                  <span className="text-[9px] font-black bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 px-2 py-0.5 rounded-full border border-emerald-100 dark:border-emerald-800">
+                    ALL SYSTEMS NOMINAL
+                  </span>
+                </div>
+                <div className="space-y-5">
+                  {[
+                    { label: "Cloud Storage", value: 72, color: "bg-primary" },
+                    { label: "API Uptime", value: 99.9, color: "bg-emerald-500" },
+                    { label: "Worker Load", value: 45, color: "bg-amber-500" },
+                  ].map((s, i) => (
+                    <div key={i}>
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-2 tracking-tighter">
+                        <span>{s.label}</span>
+                        <span className="text-slate-900 dark:text-slate-100 font-black">{s.value}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`${s.color} h-full rounded-full transition-all duration-1000 ease-out`}
+                          style={{ width: `${s.value}%` }}
+                        />
+                      </div>
                     </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-50">
-                      15%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-100 dark:bg-slate-800"></span>
-                      <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                        Free Tier
-                      </span>
-                    </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-slate-50">
-                      20%
-                    </span>
-                  </div>
+                  ))}
                 </div>
               </div>
 
               {/* Quick Support Card */}
-              <div className="bg-primary rounded-xl shadow-lg shadow-primary/20 p-6 text-white overflow-hidden relative">
+              <div className="bg-slate-900 dark:bg-slate-800 rounded-xl shadow-xl p-6 text-white overflow-hidden relative border border-slate-800">
                 <div className="relative z-10">
-                  <h4 className="font-black text-lg mb-2">Need Assistance?</h4>
-                  <p className="text-white/80 text-xs mb-4 leading-relaxed">
-                    Contact our enterprise support team for direct platform
-                    integrations or security audits.
+                  <div className="size-10 rounded-lg bg-white/10 flex items-center justify-center mb-4">
+                    <CheckCircle size={24} weight="duotone" className="text-primary-light" />
+                  </div>
+                  <h4 className="font-black text-lg mb-1">Enterprise Support</h4>
+                  <p className="text-slate-400 text-[11px] mb-6 leading-relaxed">
+                    Direct access to security audits and platform integrations.
                   </p>
                   <button
                     onClick={handleContactSupport}
-                    className="bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors"
+                    className="w-full bg-white text-slate-900 hover:bg-slate-100 py-2.5 rounded-lg font-black text-xs transition-all active:scale-95 shadow-lg"
                   >
-                    Contact Support
+                    Open Ticket
                   </button>
-                </div>
-                <CheckCircle
-                  size={128}
-                  weight="fill"
-                  className="absolute -bottom-4 -right-4 text-white/10"
-                />
-              </div>
-
-              {/* System Health */}
-              <div className="bg-surface dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 p-6">
-                <h3 className="font-bold text-slate-900 dark:text-slate-50 mb-4">
-                  System Health
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
-                      <span>Cloud Storage</span>
-                      <span>72%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full">
-                      <div
-                        className="bg-primary h-full rounded-full"
-                        style={{ width: "72%" }}
-                      ></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
-                      <span>API Uptime</span>
-                      <span>99.9%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full">
-                      <div
-                        className="bg-emerald-400 h-full rounded-full"
-                        style={{ width: "99%" }}
-                      ></div>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

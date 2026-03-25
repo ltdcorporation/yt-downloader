@@ -11,6 +11,7 @@ import {
   CaretLeft,
   X,
   ArrowLeft,
+  ShieldCheck,
 } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";
 import { useState, useEffect } from "react";
@@ -45,6 +46,12 @@ export default function SettingsSidebar({
       label: "Settings",
       href: "/settings",
       active: pathname === "/settings",
+    },
+    {
+      icon: ShieldCheck,
+      label: "Admin",
+      href: "/admin",
+      active: pathname === "/admin",
     },
   ];
 
