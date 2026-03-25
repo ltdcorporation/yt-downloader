@@ -143,7 +143,7 @@ export default function SubscriptionPage() {
           onMenuClick={() => setIsSidebarOpen(true)}
           showText={false}
         />
-        <div className="max-w-4xl px-8 pb-12 pt-2 space-y-6">
+        <div className="max-w-4xl mx-auto px-8 pb-12 pt-2 space-y-6">
           {loadError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
               {loadError}
