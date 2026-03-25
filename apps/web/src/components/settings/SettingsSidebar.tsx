@@ -57,13 +57,16 @@ export default function SettingsSidebar({
       href: "/settings",
       active: pathname === "/settings",
     },
-    {
+  ];
+
+  if (user.plan === "Super Admin") {
+    defaultNavItems.push({
       icon: ShieldCheck,
       label: "Admin",
       href: "/admin",
       active: pathname.startsWith("/admin"),
-    },
-  ];
+    });
+  }
 
   const items = customNavItems || defaultNavItems;
 

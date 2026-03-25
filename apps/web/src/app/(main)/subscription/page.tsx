@@ -123,10 +123,12 @@ export default function SubscriptionPage() {
     return null;
   }
 
+  const isAdmin = currentUser.email === "admin@example.com";
+
   const userProfile = {
     name: currentUser.full_name,
     email: currentUser.email,
-    plan: "Pro Plan",
+    plan: isAdmin ? "Super Admin" : "Pro Plan",
     avatar: currentUser.avatar_url || DEFAULT_AVATAR_URL,
   };
 

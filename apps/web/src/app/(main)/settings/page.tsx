@@ -494,10 +494,12 @@ export default function SettingsPage() {
   const effectiveUserName = profileFullName || currentUser.full_name;
   const effectiveUserEmail = profileEmail || currentUser.email;
 
+  const isAdmin = effectiveUserEmail === "admin@example.com"; // Mock check, replace with real logic if available
+
   const userProfile: UserProfile = {
     name: effectiveUserName,
     email: effectiveUserEmail,
-    plan: "Free Plan",
+    plan: isAdmin ? "Super Admin" : "Free Plan",
     avatar: profileAvatarURL || currentUser.avatar_url || DEFAULT_AVATAR_URL,
   };
 
