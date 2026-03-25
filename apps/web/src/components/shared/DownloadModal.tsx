@@ -13,6 +13,8 @@ import {
   MusicNotes,
   Image as ImageIcon,
   CheckCircle,
+  Scissors,
+  Flame,
 } from "@phosphor-icons/react";
 import {
   type ResolveFormat,
@@ -95,6 +97,13 @@ function formatDuration(totalSeconds?: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDurationToHMS(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) {
     return "Unknown size";
@@ -128,7 +137,13 @@ export default function DownloadModal({
   const [selectedMediaIds, setSelectedMediaIds] = useState<string[]>([]);
   const [isConfirming, setIsConfirming] = useState(false);
 
+  // Time trim state
+  const [startTime, setStartTime] = useState("00:00:00");
+  const [endTime, setEndTime] = useState("00:00:00");
+  const [isHeatmapCut, setIsHeatmapCut] = useState(false);
+
   const platform = detectPlatform(sourceUrl);
+  const isYoutube = platform === "youtube";
   const isInstagram = platform === "instagram";
   const isCarousel = isInstagram && result?.kind === "carousel";
   const isImageOnly = isInstagram && result?.kind === "image";
@@ -199,12 +214,34 @@ export default function DownloadModal({
     );
   }, [mp4Formats, platform]);
 
+  const handleTimeTrimChange = (type: "start" | "end", value: string) => {
+    if (type === "start") setStartTime(value);
+    else setEndTime(value);
+    setIsHeatmapCut(false);
+  };
+
+  const handleHeatmapToggle = () => {
+    const nextVal = !isHeatmapCut;
+    setIsHeatmapCut(nextVal);
+    if (nextVal && result?.duration_seconds) {
+      setStartTime("00:00:00");
+      setEndTime(formatDurationToHMS(result.duration_seconds));
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
       // Auto-select all if carousel
       if (result?.medias && result.kind === "carousel") {
         setSelectedMediaIds(result.medias.map((m) => m.id));
+      }
+
+      // Init time trim
+      if (result?.duration_seconds) {
+        setEndTime(formatDurationToHMS(result.duration_seconds));
+        setStartTime("00:00:00");
+        setIsHeatmapCut(false);
       }
     } else {
       document.body.style.overflow = "";
@@ -532,6 +569,67 @@ export default function DownloadModal({
               </p>
             )}
           </div>
+
+          {!isCarousel && !isImageOnly && isYoutube && (
+            <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                  <Scissors size={18} weight="fill" className="text-primary" />
+                  Cutoff Video
+                </div>
+                <button
+                  onClick={handleHeatmapToggle}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${
+                    isHeatmapCut
+                      ? "bg-orange-500 border-orange-400 text-white shadow-lg shadow-orange-500/20"
+                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500"
+                  }`}
+                >
+                  <Flame size={14} weight={isHeatmapCut ? "fill" : "bold"} />
+                  Heatmap Cut {isHeatmapCut ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    Start Time
+                  </label>
+                  <div className="relative">
+                    <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={startTime}
+                      onChange={(e) => handleTimeTrimChange("start", e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      placeholder="00:00:00"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+                    End Time
+                  </label>
+                  <div className="relative">
+                    <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={endTime}
+                      onChange={(e) => handleTimeTrimChange("end", e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      placeholder="00:00:00"
+                    />
+                  </div>
+                </div>
+              </div>
+              
+              {isHeatmapCut && (
+                <p className="text-[10px] text-orange-600 dark:text-orange-400 font-medium bg-orange-50 dark:bg-orange-950/30 p-2 rounded-lg border border-orange-100 dark:border-orange-900/50">
+                  Note: Heatmap Cut will automatically find and cut the most viral/highlighted part of this video.
+                </p>
+              )}
+            </div>
+          )}
 
           {!isCarousel && !isImageOnly && (
             <div className="space-y-3">
