@@ -7,6 +7,7 @@ import { api, APIError } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import { CreditCard, Download, CheckCircle, XCircle } from "@phosphor-icons/react";
+import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 
 interface BillingHistoryItem {
   id: string;
@@ -125,8 +126,8 @@ export default function SubscriptionPage() {
   const userProfile = {
     name: currentUser.full_name,
     email: currentUser.email,
-    plan: "Free Plan",
-    avatar: currentUser.avatar_url || "/default-avatar.png",
+    plan: "Pro Plan",
+    avatar: currentUser.avatar_url || DEFAULT_AVATAR_URL,
   };
 
   return (
@@ -138,8 +139,11 @@ export default function SubscriptionPage() {
         onClose={() => setIsSidebarOpen(false)}
       />
       <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
-        <SettingsHeader onMenuClick={() => setIsSidebarOpen(true)} />
-        <div className="max-w-4xl px-8 pb-12 space-y-6">
+        <SettingsHeader
+          onMenuClick={() => setIsSidebarOpen(true)}
+          showText={false}
+        />
+        <div className="max-w-4xl px-8 pb-12 -mt-4 space-y-6">
           {loadError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
               {loadError}

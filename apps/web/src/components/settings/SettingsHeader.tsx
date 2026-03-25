@@ -4,11 +4,19 @@ import { Bell, Question, List } from "@phosphor-icons/react";
 
 interface SettingsHeaderProps {
   onMenuClick?: () => void;
+  title?: string;
+  description?: string;
+  showText?: boolean;
 }
 
-export default function SettingsHeader({ onMenuClick }: SettingsHeaderProps) {
+export default function SettingsHeader({
+  onMenuClick,
+  title = "Settings",
+  description = "Manage your account and app preferences.",
+  showText = true,
+}: SettingsHeaderProps) {
   return (
-    <header className="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-8 py-6 flex justify-between items-center">
+    <header className={`sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md px-8 flex justify-between items-center ${showText ? "py-6" : "py-4"}`}>
       <div className="flex items-center gap-4">
         <button
           onClick={onMenuClick}
@@ -17,12 +25,14 @@ export default function SettingsHeader({ onMenuClick }: SettingsHeaderProps) {
         >
           <List size={24} />
         </button>
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">Settings</h1>
-          <p className="text-slate-500 text-sm hidden sm:block">
-            Manage your account and app preferences.
-          </p>
-        </div>
+        {showText && (
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">{title}</h1>
+            <p className="text-slate-500 text-sm hidden sm:block">
+              {description}
+            </p>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <button

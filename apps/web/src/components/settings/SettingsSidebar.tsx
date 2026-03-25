@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 
 interface SettingsSidebarProps {
   user: UserProfile;
@@ -27,23 +28,29 @@ export default function SettingsSidebar({
   isOpen = false,
   onClose,
 }: SettingsSidebarProps) {
+  const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navItems = [
-    { icon: Gauge, label: "Dashboard", href: "/", active: false },
+    { icon: Gauge, label: "Dashboard", href: "/", active: pathname === "/" },
     {
       icon: ClockCounterClockwise,
       label: "History",
       href: "/history",
-      active: false,
+      active: pathname === "/history",
     },
     {
       icon: CreditCard,
       label: "Subscription",
       href: "/subscription",
-      active: false,
+      active: pathname === "/subscription",
     },
-    { icon: Gear, label: "Settings", href: "/settings", active: true },
+    {
+      icon: Gear,
+      label: "Settings",
+      href: "/settings",
+      active: pathname === "/settings",
+    },
   ];
 
   return (
