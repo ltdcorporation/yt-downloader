@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
+import SettingsSidebar from "@/components/settings/SettingsSidebar";
+import SettingsHeader from "@/components/settings/SettingsHeader";
+import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import {
-  TrayArrowDown,
   Layout,
   Users,
   ChartBar,
@@ -111,11 +113,11 @@ const MOCK_TIPS: TipCard[] = [
 export default function AdminUsersPage() {
   const { currentUser, logout, isAuthChecking, setCurrentUser, setIsAuthChecking } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeNavItem, setActiveNavItem] = useState("users");
   const [currentPage, setCurrentPage] = useState(1);
   const [users, setUsers] = useState<UserData[]>(MOCK_USERS);
 
@@ -184,7 +186,7 @@ export default function AdminUsersPage() {
       case "free":
         return "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400";
       case "suspended":
-        return "bg-error-container text-error dark:bg-error/20 dark:text-error";
+        return "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400";
     }
   };
 
@@ -199,11 +201,50 @@ export default function AdminUsersPage() {
     }
   };
 
-  const navItems = [
-    { id: "dashboard", icon: Layout, label: "Dashboard", active: false },
-    { id: "users", icon: Users, label: "Users", active: true },
-    { id: "analytics", icon: ChartBar, label: "Analytics", active: false },
-    { id: "settings", icon: Gear, label: "Settings", active: false },
+  if (isAuthChecking || isPageLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return null;
+  }
+
+  const userProfile = {
+    name: currentUser.full_name,
+    email: currentUser.email,
+    plan: "Super Admin",
+    avatar: currentUser.avatar_url || DEFAULT_AVATAR_URL,
+  };
+
+  const adminNavItems = [
+    {
+      icon: Layout,
+      label: "Dashboard",
+      href: "/admin",
+      active: pathname === "/admin",
+    },
+    {
+      icon: Users,
+      label: "Users",
+      href: "/admin/users",
+      active: pathname === "/admin/users",
+    },
+    {
+      icon: ChartBar,
+      label: "Analytics",
+      href: "/admin/analytics",
+      active: pathname === "/admin/analytics",
+    },
+    {
+      icon: Gear,
+      label: "Settings",
+      href: "/admin/settings",
+      active: pathname === "/admin/settings",
+    },
   ];
 
   const totalPages = 1248;
@@ -211,369 +252,247 @@ export default function AdminUsersPage() {
   const endIndex = Math.min(currentPage * 10, 12482);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background dark:bg-slate-950">
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 border-r border-slate-200 dark:border-slate-800 bg-surface-container-low dark:bg-slate-950 flex flex-col p-4 space-y-2 transition-transform duration-300 ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
-      >
-        <div className="px-2 py-4 flex items-center space-x-3 mb-6">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-            <TrayArrowDown size={20} weight="fill" className="text-white" />
-          </div>
-          <div>
-            <h1 className="font-black text-slate-900 dark:text-slate-50 tracking-tighter">
-              QuickSnap
-            </h1>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              Admin Console
-            </p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveNavItem(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-sm font-medium ${
-                item.active
-                  ? "bg-primary/10 text-primary font-bold"
-                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900"
-              }`}
-            >
-              <item.icon size={20} weight={item.active ? "fill" : "regular"} />
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-          <button
-            onClick={handleAddUser}
-            className="w-full flex items-center justify-center gap-2 bg-primary text-white py-2 rounded-lg shadow-lg shadow-primary/20 font-bold text-sm active:scale-95 transition-all"
-          >
-            <Plus size={18} weight="bold" />
-            <span>New Report</span>
-          </button>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2 mt-4 text-slate-600 dark:text-slate-400 hover:text-error transition-all duration-150 text-sm font-medium w-full"
-          >
-            <SignOut size={20} />
-            <span>Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+    <div className="flex h-screen overflow-hidden bg-background-light dark:bg-background-dark">
+      <SettingsSidebar
+        user={userProfile}
+        onLogout={handleLogout}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        navItems={adminNavItems}
+      />
 
       {/* Main Content */}
-      <main className="flex-1 ml-0 lg:ml-64 min-h-screen">
-        {/* Top App Bar */}
-        <header className="fixed top-0 right-0 left-0 lg:left-64 h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 z-40">
-          <div className="flex justify-between items-center px-6 lg:px-8 h-full">
-            <div className="flex items-center gap-4">
-              {/* Mobile Menu Button */}
-              <button
-                onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors"
-                aria-label="Open menu"
-              >
-                <Layout size={24} />
-              </button>
-
-              {/* Search Bar */}
-              <div className="relative">
-                <MagnifyingGlass
-                  size={20}
-                  weight="bold"
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  className="pl-10 pr-4 py-1.5 bg-slate-100 dark:bg-slate-800 border-none rounded-md text-sm w-48 sm:w-64 focus:ring-2 focus:ring-primary/50 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-400"
-                  placeholder="Global search..."
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Notifications */}
-              <button className="p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors relative">
-                <Bell size={24} />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white dark:border-slate-700"></span>
-              </button>
-
-              {/* Help */}
-              <button className="p-2 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-full transition-colors">
-                <Question size={24} />
-              </button>
-
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
-
-              {/* User Profile */}
-              <div className="flex items-center gap-3">
-                <div className="text-right hidden sm:block">
-                  <p className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                    {currentUser.full_name}
-                  </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                    System Admin
-                  </p>
-                </div>
-                <div className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm bg-primary/10 flex items-center justify-center overflow-hidden">
-                  {currentUser.avatar_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={currentUser.avatar_url}
-                      alt={currentUser.full_name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User size={20} className="text-primary" />
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </header>
+      <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
+        <SettingsHeader
+          onMenuClick={() => setIsSidebarOpen(true)}
+          title="User Management"
+          showText={false}
+        />
 
         {/* Main Content Canvas */}
-        <main className="ml-0 lg:ml-64 pt-16 min-h-screen p-4 sm:p-8">
-          <div className="max-w-7xl mx-auto space-y-8">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
-                  User Management
-                </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
-                  Manage permissions, subscription tiers, and account health for
-                  all registered users.
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleExportCSV}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-sm rounded-lg transition-all active:scale-95 hover:bg-slate-200 dark:hover:bg-slate-700 flex items-center gap-2"
-                >
-                  <FileCsv size={20} weight="bold" />
-                  <span className="hidden sm:inline">Export CSV</span>
-                </button>
-                <button
-                  onClick={handleAddUser}
-                  className="px-4 py-2 bg-primary text-white font-bold text-sm rounded-lg shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center gap-2"
-                >
-                  <UserPlus size={20} weight="bold" />
-                  <span className="hidden sm:inline">Add New User</span>
-                </button>
-              </div>
+        <div className="max-w-7xl mx-auto pt-4 px-4 sm:px-8 pb-12 space-y-8">
+          {/* Page Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 dark:text-slate-50 tracking-tight">
+                User Management
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
+                Manage permissions, subscription tiers, and account health for
+                all registered users.
+              </p>
             </div>
-
-            {/* Main Table Section */}
-            <div className="bg-surface dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
-              {/* Table Content */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-low dark:bg-slate-800/50">
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
-                        User
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
-                        Join Date
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
-                        Status
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 text-center">
-                        Downloads
-                      </th>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 text-right">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {users.map((user) => (
-                      <tr
-                        key={user.id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            {user.avatar ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={user.avatar}
-                                alt={user.name}
-                                className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-xs">
-                                {user.initials}
-                              </div>
-                            )}
-                            <div>
-                              <p className="text-sm font-bold text-slate-900 dark:text-slate-50">
-                                {user.name}
-                              </p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {user.email}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">
-                          {user.joinDate}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tight ${getPlanBadgeStyles(
-                              user.plan
-                            )}`}
-                          >
-                            {getPlanLabel(user.plan)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-50 font-bold text-center">
-                          {user.downloads.toLocaleString()}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => handleEditUser(user.id)}
-                              className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-md transition-all"
-                              aria-label="Edit user"
-                            >
-                              <PencilSimple size={20} />
-                            </button>
-                            {user.plan === "suspended" ? (
-                              <button
-                                onClick={() => handleUnblockUser(user.id)}
-                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-md transition-all"
-                                aria-label="Unblock user"
-                              >
-                                <CheckCircle size={20} weight="fill" />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleBlockUser(user.id)}
-                                className="p-2 text-slate-400 hover:text-error hover:bg-error-container/5 dark:hover:bg-error/20 rounded-md transition-all"
-                                aria-label="Block user"
-                              >
-                                <Prohibit size={20} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="px-6 py-4 bg-surface-container-low dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                  Showing {startIndex}-{endIndex} of 12,482 users
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1}
-                    className="p-1.5 rounded hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm transition-all text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                    aria-label="Previous page"
-                  >
-                    <CaretLeft size={20} weight="bold" />
-                  </button>
-                  <button className="w-8 h-8 rounded bg-primary text-white font-bold text-xs shadow-sm">
-                    1
-                  </button>
-                  <button className="w-8 h-8 rounded hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
-                    2
-                  </button>
-                  <button className="w-8 h-8 rounded hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
-                    3
-                  </button>
-                  <span className="px-2 text-slate-400">...</span>
-                  <button className="w-8 h-8 rounded hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
-                    {totalPages}
-                  </button>
-                  <button
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    className="p-1.5 rounded hover:bg-white dark:hover:bg-slate-700 hover:shadow-sm transition-all text-slate-400"
-                    aria-label="Next page"
-                  >
-                    <CaretRight size={20} weight="bold" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Contextual Help / Tips */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {MOCK_TIPS.map((tip) => (
-                <div
-                  key={tip.id}
-                  className={`p-6 rounded-lg border flex gap-4 items-start ${
-                    tip.type === "tip"
-                      ? "bg-primary/5 border-primary/10"
-                      : "bg-surface-container-low dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                  }`}
-                >
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                      tip.type === "tip"
-                        ? "bg-primary/10"
-                        : "bg-slate-200 dark:bg-slate-800"
-                    }`}
-                  >
-                    {tip.type === "tip" ? (
-                      <Lightbulb
-                        size={20}
-                        className="text-primary"
-                        weight="fill"
-                      />
-                    ) : (
-                      <ShieldCheck
-                        size={20}
-                        className="text-slate-500 dark:text-slate-400"
-                        weight="fill"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <h4
-                      className={`text-sm font-bold tracking-tight ${
-                        tip.type === "tip"
-                          ? "text-primary"
-                          : "text-slate-900 dark:text-slate-50"
-                      }`}
-                    >
-                      {tip.title}
-                    </h4>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                      {tip.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
+            <div className="flex gap-3">
+              <button
+                onClick={handleExportCSV}
+                className="px-4 py-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold text-sm rounded-lg border border-slate-200 dark:border-slate-700 transition-all active:scale-95 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 shadow-sm"
+              >
+                <FileCsv size={20} weight="bold" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+              <button
+                onClick={handleAddUser}
+                className="px-4 py-2 bg-primary text-white font-bold text-sm rounded-lg shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center gap-2"
+              >
+                <UserPlus size={20} weight="bold" />
+                <span className="hidden sm:inline">Add New User</span>
+              </button>
             </div>
           </div>
-        </main>
+
+          {/* Main Table Section */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+            {/* Table Content */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                      User
+                    </th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                      Join Date
+                    </th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800">
+                      Status
+                    </th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 text-center">
+                      Downloads
+                    </th>
+                    <th className="px-6 py-4 text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 text-right">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {users.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {user.avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={user.avatar}
+                              alt={user.name}
+                              className="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-xs">
+                              {user.initials}
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-sm font-bold text-slate-900 dark:text-slate-50">
+                              {user.name}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {user.email}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">
+                        {user.joinDate}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-tight ${getPlanBadgeStyles(
+                            user.plan
+                          )}`}
+                        >
+                          {getPlanLabel(user.plan)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-900 dark:text-slate-50 font-bold text-center">
+                        {user.downloads.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleEditUser(user.id)}
+                            className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-md transition-all"
+                            aria-label="Edit user"
+                          >
+                            <PencilSimple size={20} />
+                          </button>
+                          {user.plan === "suspended" ? (
+                            <button
+                              onClick={() => handleUnblockUser(user.id)}
+                              className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-md transition-all"
+                              aria-label="Unblock user"
+                            >
+                              <CheckCircle size={20} weight="fill" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleBlockUser(user.id)}
+                              className="p-2 text-slate-400 hover:text-error hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-md transition-all"
+                              aria-label="Block user"
+                            >
+                              <Prohibit size={20} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="px-6 py-4 bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                Showing {startIndex}-{endIndex} of 12,482 users
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-sm transition-all text-slate-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label="Previous page"
+                >
+                  <CaretLeft size={20} weight="bold" />
+                </button>
+                <button className="w-9 h-9 rounded-lg bg-primary text-white font-bold text-xs shadow-sm">
+                  1
+                </button>
+                <button className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
+                  2
+                </button>
+                <button className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
+                  3
+                </button>
+                <span className="px-2 text-slate-400">...</span>
+                <button className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-sm text-slate-600 dark:text-slate-300 font-bold text-xs transition-all">
+                  {totalPages}
+                </button>
+                <button
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 hover:shadow-sm transition-all text-slate-400"
+                  aria-label="Next page"
+                >
+                  <CaretRight size={20} weight="bold" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Contextual Help / Tips */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {MOCK_TIPS.map((tip) => (
+              <div
+                key={tip.id}
+                className={`p-6 rounded-xl border flex gap-4 items-start ${
+                  tip.type === "tip"
+                    ? "bg-primary/5 border-primary/10"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    tip.type === "tip"
+                      ? "bg-primary/10"
+                      : "bg-slate-100 dark:bg-slate-800"
+                  }`}
+                >
+                  {tip.type === "tip" ? (
+                    <Lightbulb
+                      size={20}
+                      className="text-primary"
+                      weight="fill"
+                    />
+                  ) : (
+                    <ShieldCheck
+                      size={20}
+                      className="text-slate-500 dark:text-slate-400"
+                      weight="fill"
+                    />
+                  )}
+                </div>
+                <div>
+                  <h4
+                    className={`text-sm font-bold tracking-tight ${
+                      tip.type === "tip"
+                        ? "text-primary"
+                        : "text-slate-900 dark:text-slate-50"
+                    }`}
+                  >
+                    {tip.title}
+                  </h4>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
+                    {tip.description}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </main>
     </div>
   );
