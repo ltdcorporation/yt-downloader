@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
@@ -18,6 +18,9 @@ import {
   CloudArrowDown,
   EnvelopeSimple,
   CheckCircle,
+  Users,
+  ChartBar,
+  Gear,
 } from "@phosphor-icons/react";
 
 interface MetricCard {
@@ -143,6 +146,8 @@ export default function AdminDashboardPage() {
     setIsPageLoading(false);
   }, [currentUser, isAuthChecking, router]);
 
+  const pathname = usePathname();
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -180,6 +185,33 @@ export default function AdminDashboardPage() {
     avatar: currentUser.avatar_url || DEFAULT_AVATAR_URL,
   };
 
+  const adminNavItems = [
+    {
+      icon: Layout,
+      label: "Dashboard",
+      href: "/admin",
+      active: pathname === "/admin",
+    },
+    {
+      icon: Users,
+      label: "Users",
+      href: "/admin/users",
+      active: pathname === "/admin/users",
+    },
+    {
+      icon: ChartBar,
+      label: "Analytics",
+      href: "/admin/analytics",
+      active: pathname === "/admin/analytics",
+    },
+    {
+      icon: Gear,
+      label: "Settings",
+      href: "/admin/settings",
+      active: pathname === "/admin/settings",
+    },
+  ];
+
   const getBadgeStyles = (type: ActivityItem["type"]) => {
     switch (type) {
       case "user":
@@ -213,6 +245,7 @@ export default function AdminDashboardPage() {
         onLogout={handleLogout}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        navItems={adminNavItems}
       />
 
       {/* Main Content */}

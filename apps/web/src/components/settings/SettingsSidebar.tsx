@@ -12,17 +12,27 @@ import {
   X,
   ArrowLeft,
   ShieldCheck,
+  ChartBar,
+  Users,
 } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 
+interface NavItem {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+  active: boolean;
+}
+
 interface SettingsSidebarProps {
   user: UserProfile;
   onLogout: () => void;
   isOpen?: boolean;
   onClose?: () => void;
+  navItems?: NavItem[];
 }
 
 export default function SettingsSidebar({
@@ -30,11 +40,12 @@ export default function SettingsSidebar({
   onLogout,
   isOpen = false,
   onClose,
+  navItems: customNavItems,
 }: SettingsSidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const navItems = [
+  const defaultNavItems = [
     {
       icon: CreditCard,
       label: "Subscription",
@@ -51,9 +62,11 @@ export default function SettingsSidebar({
       icon: ShieldCheck,
       label: "Admin",
       href: "/admin",
-      active: pathname === "/admin",
+      active: pathname.startsWith("/admin"),
     },
   ];
+
+  const items = customNavItems || defaultNavItems;
 
   return (
     <>
@@ -104,7 +117,7 @@ export default function SettingsSidebar({
         </div>
 
         <nav className={`flex-1 px-4 space-y-1 ${isCollapsed ? "lg:px-2" : ""}`}>
-          {navItems.map((item) => (
+          {items.map((item) => (
             <a
               key={item.label}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group ${
