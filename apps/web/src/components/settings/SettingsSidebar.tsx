@@ -32,13 +32,6 @@ export default function SettingsSidebar({
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const navItems = [
-    { icon: Gauge, label: "Dashboard", href: "/", active: pathname === "/" },
-    {
-      icon: ClockCounterClockwise,
-      label: "History",
-      href: "/history",
-      active: pathname === "/history",
-    },
     {
       icon: CreditCard,
       label: "Subscription",
