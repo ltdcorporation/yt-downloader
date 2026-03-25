@@ -677,3 +677,58 @@ MVP dianggap siap kalau semua checklist ini true:
 - [ ] Dedicated Postgres integration test untuk race edge-case avatar replace belum ada
 - [ ] Metrics/audit observability khusus avatar pipeline belum lengkap
 - [ ] Offline fallback upload queue belum dibangun
+
+---
+
+## 11) Update: 25/03/2026
+
+### Branch: `create/add-subscription-and-ui-admin`
+
+- [x] The `/settings` page has been updated with an adjustable sidebar and a mobile hamburger menu
+- [x] Create UI subscription and linked to sidebar in the settings
+- [x] fix Ui subscription 1.0
+- [x] fix Ui subscription 1.1
+- [x] fix Ui subscription 1.2
+- [x] fix Ui subscription 1.3
+- [x] fix Ui subscription 1.4
+- [x] fix Ui subscription 1.5: button home sidebar
+- [x] fix Ui subscription 1.6: fix view konten page "settings" dan history ketika sidebar collapse
+- [x] add mock admin page
+- [x] fix Ui admin 1.0: perbaikan ui konten, sidebar dan navbar agar konsisten
+- [x] fix Ui admin 1.1: perbaikan route sidebar, perbaikan opsi, penambahan mock opsi dan page users di admin page
+- [x] fix Ui admin 1.2: fix 1.1
+- [x] fix Ui admin 1.3: penyesuaian menu admin, menambahkan opsi dan page maintenance website
+
+### Branch: `fix/route-all-pages`
+
+- [x] fix route frontend: Perbaikan minor untuk Dynamic Routes/admin/users/[id]
+- [x] fix route frontend 1.0: Perbaikan untuk commit sebelumnya dan Restrukturisasi Route Groups
+
+### Struktur Route Saat Ini
+
+#### 1. Halaman Utama (Main Application)
+Halaman-halaman ini berada dalam grup `(main)` dan dapat diakses oleh user umum:
+
+| Route | Deskripsi |
+|-------|-----------|
+| `/` | Beranda (Landing Page) |
+| `/history` | Riwayat download user |
+| `/settings` | Pengaturan akun dan aplikasi |
+| `/subscription` | Manajemen paket langganan dan penagihan |
+
+#### 2. Halaman Administrasi (Admin Console)
+Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
+
+| Route | Deskripsi |
+|-------|-----------|
+| `/admin` | Dashboard ringkasan admin |
+| `/admin/users` | Daftar manajemen seluruh user |
+| `/admin/users/[id]` | (Dynamic) Detail profil dan aktivitas user spesifik |
+| `/admin/maintenance` | Kontrol sistem dan status layanan |
+
+### Branch: `add/trim-heatmap-modal`
+
+- [x] add/trim-heatmap-modal: implementasi trim and heatmap di modal pop up youtube
+- [x] add/trim-heatmap-modal: fix commit sebelumnya
+- [x] add/trim-heatmap-modal: fix warning pada commit sebelumnya
+- [x] add/trim-heatmap-modal: fix heatmap button and more settings on download button in modal popup
