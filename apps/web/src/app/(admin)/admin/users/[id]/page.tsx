@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname, useParams } from "next/navigation";
+import Image from "next/image";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
@@ -152,9 +153,11 @@ export default function AdminUserDetailPage() {
           <section className="bg-white dark:bg-slate-900 rounded-xl p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex flex-col md:flex-row gap-8 items-start">
               <div className="relative group">
-                <img
+                <Image
                   src={user.avatar || DEFAULT_AVATAR_URL}
                   alt={user.name}
+                  width={128}
+                  height={128}
                   className="size-32 rounded-2xl object-cover border-4 border-slate-50 dark:border-slate-800 shadow-xl"
                 />
                 <div className={`absolute -bottom-2 -right-2 size-6 rounded-full border-4 border-white dark:border-slate-900 ${
