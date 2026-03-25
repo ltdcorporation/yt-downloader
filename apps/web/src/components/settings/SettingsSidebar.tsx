@@ -10,10 +10,12 @@ import {
   List,
   CaretLeft,
   X,
+  ArrowLeft,
 } from "@phosphor-icons/react";
 import type { UserProfile } from "@/data/settings-data";
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 
 interface SettingsSidebarProps {
   user: UserProfile;
@@ -128,6 +130,20 @@ export default function SettingsSidebar({
         </nav>
 
         <div className={`p-4 border-t border-slate-200 dark:border-slate-800 ${isCollapsed ? "lg:p-2" : ""}`}>
+          <Link
+            href="/"
+            className={`flex items-center gap-3 px-3 py-2 mb-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group ${
+              isCollapsed ? "lg:justify-center" : ""
+            }`}
+            title={isCollapsed ? "Back to Home" : ""}
+          >
+            <ArrowLeft size={20} className="shrink-0" />
+            {!isCollapsed && (
+              <span className="font-medium text-sm truncate whitespace-nowrap">
+                Back to Home
+              </span>
+            )}
+          </Link>
           <div className={`flex items-center gap-3 px-2 py-2 ${isCollapsed ? "lg:justify-center lg:px-0" : ""}`}>
             <div className="shrink-0 size-8 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
