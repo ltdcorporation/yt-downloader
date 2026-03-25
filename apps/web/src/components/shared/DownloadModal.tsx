@@ -602,7 +602,10 @@ export default function DownloadModal({
                       type="text"
                       value={startTime}
                       onChange={(e) => handleTimeTrimChange("start", e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      disabled={isHeatmapCut}
+                      className={`w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all ${
+                        isHeatmapCut ? "opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900" : ""
+                      }`}
                       placeholder="00:00:00"
                     />
                   </div>
@@ -617,7 +620,10 @@ export default function DownloadModal({
                       type="text"
                       value={endTime}
                       onChange={(e) => handleTimeTrimChange("end", e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all"
+                      disabled={isHeatmapCut}
+                      className={`w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold focus:ring-2 focus:ring-primary/50 outline-none transition-all ${
+                        isHeatmapCut ? "opacity-50 cursor-not-allowed bg-slate-50 dark:bg-slate-900" : ""
+                      }`}
                       placeholder="00:00:00"
                     />
                   </div>
@@ -664,7 +670,13 @@ export default function DownloadModal({
                 (!isCarousel && !isImageOnly && !selectedFormat) ||
                 !sourceUrl
               }
-              className="w-full bg-primary text-white py-4 rounded-xl font-bold text-lg hover:brightness-105 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-3 shadow-lg ${
+                ((isCarousel && selectedMediaIds.length > 0) ||
+                (isImageOnly) ||
+                (!isCarousel && !isImageOnly && selectedFormat)) && sourceUrl
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20 active:scale-[0.98]"
+                  : "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none"
+              }`}
             >
               <Download size={24} weight="bold" />
               {downloadButtonLabel}
