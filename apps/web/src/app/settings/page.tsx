@@ -467,6 +467,8 @@ export default function SettingsPage() {
     }
   };
 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -501,9 +503,14 @@ export default function SettingsPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <SettingsSidebar user={userProfile} onLogout={handleLogout} />
+      <SettingsSidebar
+        user={userProfile}
+        onLogout={handleLogout}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+      />
       <main className="flex-1 overflow-y-auto bg-background-light dark:bg-background-dark">
-        <SettingsHeader />
+        <SettingsHeader onMenuClick={() => setIsSidebarOpen(true)} />
         <div className="max-w-4xl px-8 pb-12 space-y-6">
           {loadError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
