@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
@@ -10,6 +11,7 @@ import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import {
   Layout,
   Users,
+  ChartBar,
   Gear,
   Plus,
   SignOut,
@@ -231,7 +233,7 @@ export default function AdminUsersPage() {
       icon: Users,
       label: "Users",
       href: "/admin/users",
-      active: pathname === "/admin/users",
+      active: pathname.startsWith("/admin/users"),
     },
     {
       icon: Wrench,
@@ -328,7 +330,8 @@ export default function AdminUsersPage() {
                   {users.map((user) => (
                     <tr
                       key={user.id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group cursor-pointer"
+                      onClick={() => router.push(`/admin/users/${user.id}`)}
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -370,7 +373,7 @@ export default function AdminUsersPage() {
                         {user.downloads.toLocaleString()}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => handleEditUser(user.id)}
                             className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 rounded-md transition-all"
