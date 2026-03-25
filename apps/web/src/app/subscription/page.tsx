@@ -218,7 +218,7 @@ export default function SubscriptionPage() {
                 </div>
                 <div className="px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                   <p className="text-xs text-slate-500 font-medium italic">
-                    You're saving 15% with your current plan.
+                    You&apos;re saving 15% with your current plan.
                   </p>
                   <button
                     onClick={handleManagePlan}
