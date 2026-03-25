@@ -284,7 +284,7 @@ export default function AdminUserDetailPage() {
                   Administrative Note
                 </h4>
                 <p className="text-slate-400 text-xs leading-relaxed italic">
-                  "{user.bio}"
+                  &quot;{user.bio}&quot;
                 </p>
               </div>
             </div>
