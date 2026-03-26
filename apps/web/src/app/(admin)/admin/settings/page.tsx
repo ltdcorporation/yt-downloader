@@ -6,20 +6,12 @@ import { useAuthStore } from "@/store";
 import {
   api,
   APIError,
-  type SettingsPatchRequest,
-  type SettingsSnapshotResponse,
 } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import SettingsProfile from "@/components/settings/SettingsProfile";
-import SettingsPreferences from "@/components/settings/SettingsPreferences";
-import SettingsNotifications from "@/components/settings/SettingsNotifications";
 import {
   DEFAULT_AVATAR_URL,
-  buildDefaultSettingsFormData,
-  fromNotificationPreferences,
-  toNotificationPreferences,
-  type SettingsFormData,
   type UserProfile,
 } from "@/data/settings-data";
 import {
@@ -44,86 +36,6 @@ interface ServerSnapshot {
     email: string;
     avatarURL: string;
   };
-  settings: SettingsFormData;
-  version: number;
-  updatedAt: string;
-}
-
-function cloneFormData(input: SettingsFormData): SettingsFormData {
-  return {
-    ...input,
-    emailAlerts: input.emailAlerts.map((alert) => ({ ...alert })),
-  };
-}
-
-function mapSettingsToForm(response: SettingsSnapshotResponse): SettingsFormData {
-  return {
-    defaultQuality: response.settings.preferences.default_quality,
-    autoTrimSilence: response.settings.preferences.auto_trim_silence,
-    thumbnailGeneration: response.settings.preferences.thumbnail_generation,
-    emailAlerts: toNotificationPreferences(response.settings.notifications.email),
-  };
-}
-
-function buildSettingsPatchPayload(
-  draft: SettingsFormData,
-  baseline: SettingsFormData,
-  version: number,
-): SettingsPatchRequest | null {
-  const preferencesPatch: {
-    default_quality?: SettingsFormData["defaultQuality"];
-    auto_trim_silence?: boolean;
-    thumbnail_generation?: boolean;
-  } = {};
-
-  if (draft.defaultQuality !== baseline.defaultQuality) {
-    preferencesPatch.default_quality = draft.defaultQuality;
-  }
-  if (draft.autoTrimSilence !== baseline.autoTrimSilence) {
-    preferencesPatch.auto_trim_silence = draft.autoTrimSilence;
-  }
-  if (draft.thumbnailGeneration !== baseline.thumbnailGeneration) {
-    preferencesPatch.thumbnail_generation = draft.thumbnailGeneration;
-  }
-
-  const draftAlerts = fromNotificationPreferences(draft.emailAlerts);
-  const baselineAlerts = fromNotificationPreferences(baseline.emailAlerts);
-  const emailNotificationsPatch: {
-    processing?: boolean;
-    storage?: boolean;
-    summary?: boolean;
-  } = {};
-
-  if (draftAlerts.processing !== baselineAlerts.processing) {
-    emailNotificationsPatch.processing = draftAlerts.processing;
-  }
-  if (draftAlerts.storage !== baselineAlerts.storage) {
-    emailNotificationsPatch.storage = draftAlerts.storage;
-  }
-  if (draftAlerts.summary !== baselineAlerts.summary) {
-    emailNotificationsPatch.summary = draftAlerts.summary;
-  }
-
-  const settingsPatch: SettingsPatchRequest["settings"] = {};
-  if (Object.keys(preferencesPatch).length > 0) {
-    settingsPatch.preferences = preferencesPatch;
-  }
-  if (Object.keys(emailNotificationsPatch).length > 0) {
-    settingsPatch.notifications = {
-      email: emailNotificationsPatch,
-    };
-  }
-
-  if (Object.keys(settingsPatch).length === 0) {
-    return null;
-  }
-
-  return {
-    settings: settingsPatch,
-    meta: {
-      version,
-    },
-  };
 }
 
 export default function AdminSettingsPage() {
@@ -140,10 +52,6 @@ export default function AdminSettingsPage() {
   const [profileFullName, setProfileFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileAvatarURL, setProfileAvatarURL] = useState("");
-  const [formData, setFormData] = useState<SettingsFormData>(
-    buildDefaultSettingsFormData(),
-  );
-  const [settingsVersion, setSettingsVersion] = useState<number>(1);
   const [serverSnapshot, setServerSnapshot] = useState<ServerSnapshot | null>(
     null,
   );
@@ -154,21 +62,14 @@ export default function AdminSettingsPage() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
-  const [conflictNotice, setConflictNotice] = useState("");
 
   const isDirty = useMemo(() => {
     if (!serverSnapshot) {
       return false;
     }
 
-    if (profileFullName !== serverSnapshot.profile.fullName) {
-      return true;
-    }
-
-    const draft = JSON.stringify(formData);
-    const baseline = JSON.stringify(serverSnapshot.settings);
-    return draft !== baseline;
-  }, [formData, profileFullName, serverSnapshot]);
+    return profileFullName !== serverSnapshot.profile.fullName;
+  }, [profileFullName, serverSnapshot]);
 
   const refreshAuthState = useCallback(async () => {
     try {
@@ -199,30 +100,20 @@ export default function AdminSettingsPage() {
     setLoadError("");
 
     try {
-      const [profileResponse, settingsResponse] = await Promise.all([
-        api.profile(),
-        api.getSettings(),
-      ]);
+      const profileResponse = await api.profile();
 
-      const nextFormData = mapSettingsToForm(settingsResponse);
       const nextSnapshot: ServerSnapshot = {
         profile: {
           fullName: profileResponse.profile.full_name,
           email: profileResponse.profile.email,
           avatarURL: profileResponse.profile.avatar_url || "",
         },
-        settings: cloneFormData(nextFormData),
-        version: settingsResponse.meta.version,
-        updatedAt: settingsResponse.meta.updated_at,
       };
 
       setProfileFullName(nextSnapshot.profile.fullName);
       setProfileEmail(nextSnapshot.profile.email);
       setProfileAvatarURL(nextSnapshot.profile.avatarURL);
-      setFormData(nextFormData);
-      setSettingsVersion(nextSnapshot.version);
       setServerSnapshot(nextSnapshot);
-      setConflictNotice("");
     } catch (error) {
       if (
         error instanceof APIError &&
@@ -236,7 +127,7 @@ export default function AdminSettingsPage() {
       setLoadError(
         error instanceof Error
           ? error.message
-          : "Failed to load settings. Please refresh and try again.",
+          : "Failed to load profile. Please refresh and try again.",
       );
     } finally {
       setIsPageLoading(false);
@@ -270,27 +161,6 @@ export default function AdminSettingsPage() {
     };
   }, [isDirty]);
 
-  const handleQualityChange = (value: SettingsFormData["defaultQuality"]) => {
-    setFormData((prev) => ({ ...prev, defaultQuality: value }));
-  };
-
-  const handleAutoTrimChange = (value: boolean) => {
-    setFormData((prev) => ({ ...prev, autoTrimSilence: value }));
-  };
-
-  const handleThumbnailChange = (value: boolean) => {
-    setFormData((prev) => ({ ...prev, thumbnailGeneration: value }));
-  };
-
-  const handleAlertChange = (id: string, checked: boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      emailAlerts: prev.emailAlerts.map((alert) =>
-        alert.id === id ? { ...alert, checked } : alert,
-      ),
-    }));
-  };
-
   const handleDiscard = () => {
     if (!serverSnapshot) {
       return;
@@ -299,11 +169,8 @@ export default function AdminSettingsPage() {
     setProfileFullName(serverSnapshot.profile.fullName);
     setProfileEmail(serverSnapshot.profile.email);
     setProfileAvatarURL(serverSnapshot.profile.avatarURL);
-    setFormData(cloneFormData(serverSnapshot.settings));
-    setSettingsVersion(serverSnapshot.version);
     setSaveError("");
     setSaveSuccess("");
-    setConflictNotice("");
   };
 
   const handleSave = async () => {
@@ -314,7 +181,6 @@ export default function AdminSettingsPage() {
     setIsSaving(true);
     setSaveError("");
     setSaveSuccess("");
-    setConflictNotice("");
 
     try {
       let finalFullName = profileFullName;
@@ -331,51 +197,24 @@ export default function AdminSettingsPage() {
         setCurrentUser(profileResponse.profile);
       }
 
-      const settingsPatch = buildSettingsPatchPayload(
-        formData,
-        serverSnapshot.settings,
-        settingsVersion,
-      );
-
-      let finalSettings = cloneFormData(formData);
-      let finalVersion = settingsVersion;
-      let finalUpdatedAt = serverSnapshot.updatedAt;
-
-      if (settingsPatch) {
-        const settingsResponse = await api.updateSettings(settingsPatch);
-        finalSettings = mapSettingsToForm(settingsResponse);
-        finalVersion = settingsResponse.meta.version;
-        finalUpdatedAt = settingsResponse.meta.updated_at;
-      }
-
       const nextSnapshot: ServerSnapshot = {
         profile: {
           fullName: finalFullName,
           email: finalEmail,
           avatarURL: finalAvatarURL,
         },
-        settings: cloneFormData(finalSettings),
-        version: finalVersion,
-        updatedAt: finalUpdatedAt,
       };
 
       setProfileFullName(finalFullName);
       setProfileEmail(finalEmail);
       setProfileAvatarURL(finalAvatarURL);
-      setFormData(finalSettings);
-      setSettingsVersion(finalVersion);
       setServerSnapshot(nextSnapshot);
-      setSaveSuccess("Settings saved successfully.");
+      setSaveSuccess("Profile updated successfully.");
     } catch (error) {
-      if (error instanceof APIError && error.code === "settings_version_conflict") {
-        setConflictNotice(
-          "Your settings were updated from another session. Reload latest data, review changes, then save again.",
-        );
-      }
       setSaveError(
         error instanceof Error
           ? error.message
-          : "Failed to save settings. Please try again.",
+          : "Failed to save profile. Please try again.",
       );
     } finally {
       setIsSaving(false);
@@ -400,7 +239,6 @@ export default function AdminSettingsPage() {
     setIsAvatarMutating(true);
     setSaveError("");
     setSaveSuccess("");
-    setConflictNotice("");
 
     try {
       const profileResponse = await api.uploadProfileAvatar(file);
@@ -441,7 +279,6 @@ export default function AdminSettingsPage() {
     setIsAvatarMutating(true);
     setSaveError("");
     setSaveSuccess("");
-    setConflictNotice("");
 
     try {
       const profileResponse = await api.removeProfileAvatar();
@@ -556,19 +393,13 @@ export default function AdminSettingsPage() {
               Admin Settings
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
-              Manage your administrator profile and global application preferences.
+              Manage your administrator profile and account details.
             </p>
           </div>
 
           {loadError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
               {loadError}
-            </div>
-          ) : null}
-
-          {conflictNotice ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              {conflictNotice}
             </div>
           ) : null}
 
@@ -594,18 +425,6 @@ export default function AdminSettingsPage() {
             avatarBusy={isAvatarMutating}
             emailReadOnly
           />
-          <SettingsPreferences
-            defaultQuality={formData.defaultQuality}
-            autoTrimSilence={formData.autoTrimSilence}
-            thumbnailGeneration={formData.thumbnailGeneration}
-            onQualityChange={handleQualityChange}
-            onAutoTrimChange={handleAutoTrimChange}
-            onThumbnailChange={handleThumbnailChange}
-          />
-          <SettingsNotifications
-            emailAlerts={formData.emailAlerts}
-            onAlertChange={handleAlertChange}
-          />
           <div className="flex items-center justify-end gap-3 pt-4">
             <button
               onClick={handleDiscard}
@@ -619,7 +438,7 @@ export default function AdminSettingsPage() {
               disabled={!isDirty || isSaving || isAvatarMutating}
               className="px-8 py-2.5 bg-primary text-white text-sm font-bold rounded-lg shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 transition-all"
             >
-              {isSaving ? "Saving..." : "Save Preferences"}
+              {isSaving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </div>
