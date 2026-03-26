@@ -11,28 +11,12 @@ import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
 import {
   Layout,
   Users,
-  ChartBar,
   Gear,
-  Plus,
-  SignOut,
-  MagnifyingGlass,
-  Bell,
-  Question,
-  User,
-  SealCheck,
-  DownloadSimple,
-  CurrencyDollar,
-  UserCirclePlus,
-  Warning,
-  CloudArrowDown,
-  EnvelopeSimple,
   CheckCircle,
   PencilSimple,
   Prohibit,
   FileCsv,
   UserPlus,
-  Lightbulb,
-  ShieldCheck,
   CaretLeft,
   CaretRight,
   Wrench,
@@ -47,13 +31,6 @@ interface UserData {
   joinDate: string;
   plan: "pro" | "free" | "suspended";
   downloads: number;
-}
-
-interface TipCard {
-  id: string;
-  type: "tip" | "security";
-  title: string;
-  description: string;
 }
 
 const MOCK_USERS: UserData[] = [
@@ -92,23 +69,6 @@ const MOCK_USERS: UserData[] = [
     joinDate: "Jan 18, 2024",
     plan: "suspended",
     downloads: 0,
-  },
-];
-
-const MOCK_TIPS: TipCard[] = [
-  {
-    id: "1",
-    type: "tip",
-    title: "Pro Tip: Bulk Actions",
-    description:
-      "Select multiple users using the checkboxes (visible on hover) to perform bulk subscription upgrades or suspension actions at once.",
-  },
-  {
-    id: "2",
-    type: "security",
-    title: "Security Audit",
-    description:
-      "Your last security review was 12 days ago. It is recommended to run a permission audit for high-volume download accounts monthly.",
   },
 ];
 
@@ -444,56 +404,6 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* Contextual Help / Tips */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {MOCK_TIPS.map((tip) => (
-              <div
-                key={tip.id}
-                className={`p-6 rounded-xl border flex gap-4 items-start ${
-                  tip.type === "tip"
-                    ? "bg-primary/5 border-primary/10"
-                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                }`}
-              >
-                <div
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                    tip.type === "tip"
-                      ? "bg-primary/10"
-                      : "bg-slate-100 dark:bg-slate-800"
-                  }`}
-                >
-                  {tip.type === "tip" ? (
-                    <Lightbulb
-                      size={20}
-                      className="text-primary"
-                      weight="fill"
-                    />
-                  ) : (
-                    <ShieldCheck
-                      size={20}
-                      className="text-slate-500 dark:text-slate-400"
-                      weight="fill"
-                    />
-                  )}
-                </div>
-                <div>
-                  <h4
-                    className={`text-sm font-bold tracking-tight ${
-                      tip.type === "tip"
-                        ? "text-primary"
-                        : "text-slate-900 dark:text-slate-50"
-                    }`}
-                  >
-                    {tip.title}
-                  </h4>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                    {tip.description}
-                  </p>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </main>
