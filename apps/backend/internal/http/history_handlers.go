@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/jobs"
 )
@@ -26,21 +25,6 @@ type historyCursorPayload struct {
 type historyRedownloadRequest struct {
 	RequestKind string `json:"request_kind"`
 	FormatID    string `json:"format_id"`
-}
-
-func (s *Server) requireSessionIdentity(w http.ResponseWriter, r *http.Request) (*auth.SessionIdentity, bool) {
-	if s == nil || s.authService == nil {
-		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
-		return nil, false
-	}
-
-	identity, err := s.authService.AuthenticateToken(r.Context(), s.readSessionToken(r))
-	if err != nil {
-		s.writeAuthSessionError(w, err)
-		return nil, false
-	}
-
-	return &identity, true
 }
 
 func (s *Server) handleHistoryList(w http.ResponseWriter, r *http.Request) {

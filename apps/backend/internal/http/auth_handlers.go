@@ -311,3 +311,45 @@ func (s *Server) authCookieName() string {
 	}
 	return name
 }
+
+func (s *Server) requireSessionIdentity(w http.ResponseWriter, r *http.Request) (*auth.SessionIdentity, bool) {
+	if s == nil || s.authService == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
+		return nil, false
+	}
+
+	identity, err := s.authService.AuthenticateToken(r.Context(), s.readSessionToken(r))
+	if err != nil {
+		s.writeAuthSessionError(w, err)
+		return nil, false
+	}
+
+	return &identity, true
+}
+
+func (s *Server) optionalSessionIdentity(r *http.Request) *auth.SessionIdentity {
+	if s == nil || s.authService == nil {
+		return nil
+	}
+
+	token := s.readSessionToken(r)
+	if strings.TrimSpace(token) == "" {
+		return nil
+	}
+
+	identity, err := s.authService.AuthenticateToken(r.Context(), token)
+	if err == nil {
+		return &identity
+	}
+
+	switch {
+	case errors.Is(err, auth.ErrInvalidSessionToken),
+		errors.Is(err, auth.ErrSessionRevoked),
+		errors.Is(err, auth.ErrSessionExpired):
+		s.logger.Printf("auth skipped due to invalid session err=%v", err)
+		return nil
+	default:
+		s.logger.Printf("auth skipped due to auth service error err=%v", err)
+		return nil
+	}
+}

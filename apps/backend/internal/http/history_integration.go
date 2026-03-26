@@ -2,14 +2,11 @@ package http
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/history"
 )
 
@@ -29,33 +26,6 @@ type historyAttemptCreateParams struct {
 	OutputKey    string
 	DownloadURL  string
 	ExpiresAt    *time.Time
-}
-
-func (s *Server) optionalSessionIdentity(r *http.Request) *auth.SessionIdentity {
-	if s == nil || s.authService == nil {
-		return nil
-	}
-
-	token := s.readSessionToken(r)
-	if strings.TrimSpace(token) == "" {
-		return nil
-	}
-
-	identity, err := s.authService.AuthenticateToken(r.Context(), token)
-	if err == nil {
-		return &identity
-	}
-
-	switch {
-	case errors.Is(err, auth.ErrInvalidSessionToken),
-		errors.Is(err, auth.ErrSessionRevoked),
-		errors.Is(err, auth.ErrSessionExpired):
-		s.logger.Printf("history auth skipped due to invalid session err=%v", err)
-		return nil
-	default:
-		s.logger.Printf("history auth skipped due to auth service error err=%v", err)
-		return nil
-	}
 }
 
 func (s *Server) createHistoryAttempt(ctx context.Context, params historyAttemptCreateParams) (*history.Attempt, bool) {

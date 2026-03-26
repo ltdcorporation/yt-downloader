@@ -20,6 +20,7 @@ type fakeBackend struct {
 	updateUserFullNameFn                 func(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	updateUserAvatarURLFn                func(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error)
 	getUserByGoogleSubjectFn             func(ctx context.Context, googleSubject string) (User, error)
+	listUsersFn                          func(ctx context.Context, limit, offset int) ([]User, int, error)
 	createSessionFn                      func(ctx context.Context, session Session) error
 	getSessionByTokenHashFn              func(ctx context.Context, tokenHash string) (Session, error)
 	touchSessionFn                       func(ctx context.Context, tokenHash string, touchedAt time.Time) error
@@ -81,7 +82,14 @@ func (f *fakeBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject 
 	if f.getUserByGoogleSubjectFn != nil {
 		return f.getUserByGoogleSubjectFn(ctx, googleSubject)
 	}
-	return User{}, ErrUserNotFound
+	return User{}, nil
+}
+
+func (f *fakeBackend) ListUsers(ctx context.Context, limit int, offset int) ([]User, int, error) {
+	if f.listUsersFn != nil {
+		return f.listUsersFn(ctx, limit, offset)
+	}
+	return nil, 0, nil
 }
 
 func (f *fakeBackend) CreateSession(ctx context.Context, session Session) error {

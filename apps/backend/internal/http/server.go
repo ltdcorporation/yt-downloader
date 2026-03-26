@@ -263,8 +263,8 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/jobs/video-cut", s.handleCreateVideoCutJob)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
-	r.With(s.requireSessionIdentity, s.requireAdmin).Get("/admin/jobs", s.handleAdminJobs)
-	r.With(s.requireSessionIdentity, s.requireAdmin).Get("/v1/admin/users", s.handleAdminUsersList)
+	r.With(s.adminAuth).Get("/admin/jobs", s.handleAdminJobs)
+	r.With(s.adminAuth).Get("/v1/admin/users", s.handleAdminUsersList)
 
 	return r
 }
@@ -780,32 +780,46 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) requireSessionIdentity(next http.Handler) http.Handler {
+func (s *Server) requireSessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := ""
-		authHeader := r.Header.Get("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimPrefix(authHeader, "Bearer ")
-		} else {
-			cookie, err := r.Cookie("session_token")
-			if err == nil {
-				token = cookie.Value
-			}
-		}
-
-		if token == "" {
-			writeErrorWithCode(w, http.StatusUnauthorized, "invalid_session", "unauthorized")
+		identity, ok := s.requireSessionIdentity(w, r)
+		if !ok {
 			return
 		}
-
-		identity, err := s.authService.AuthenticateToken(r.Context(), token)
-		if err != nil {
-			writeErrorWithCode(w, http.StatusUnauthorized, "invalid_session", "unauthorized")
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), "identity", identity)
+		ctx := context.WithValue(r.Context(), "identity", *identity)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *Server) adminAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try Basic Auth first (common for CLI/scripts)
+		user, pass, ok := r.BasicAuth()
+		if ok && user == s.cfg.AdminBasicAuthUser && pass == s.cfg.AdminBasicAuthPass {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Try Session Auth (Bearer token or Cookie)
+		token := s.readSessionToken(r)
+		if token != "" {
+			identity, err := s.authService.AuthenticateToken(r.Context(), token)
+			if err == nil {
+				if identity.User.Role == auth.RoleAdmin {
+					ctx := context.WithValue(r.Context(), "identity", identity)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				writeError(w, http.StatusForbidden, "forbidden: admin role required")
+				return
+			}
+			s.writeAuthSessionError(w, err)
+			return
+		}
+
+		// If no valid auth provided, prompt for Basic Auth
+		w.Header().Set("WWW-Authenticate", `Basic realm="admin"`)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 	})
 }
 
