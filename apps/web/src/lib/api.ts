@@ -253,8 +253,15 @@ export async function fetcher<T>(
   const headers = new Headers({
     Accept: "application/json",
     "Content-Type": "application/json",
-    ...options?.headers,
   });
+
+  // Merge headers from options
+  if (options?.headers) {
+    const customHeaders = new Headers(options.headers);
+    customHeaders.forEach((value, key) => {
+      headers.set(key, value);
+    });
+  }
 
   // Automatically attach admin auth if present in sessionStorage
   if (typeof window !== "undefined") {

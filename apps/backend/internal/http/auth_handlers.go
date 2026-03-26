@@ -128,17 +128,25 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 	// Try Basic Auth first (common for admin access via config)
 	user, pass, ok := r.BasicAuth()
-	if ok && user == s.cfg.AdminBasicAuthUser && pass == s.cfg.AdminBasicAuthPass {
-		writeJSON(w, http.StatusOK, authMeResponse{
-			User: auth.PublicUser{
-				ID:        "admin",
-				FullName:  "System Administrator",
-				Email:     "admin@system",
-				Role:      auth.RoleAdmin,
-				Plan:      auth.PlanMonthly,
-				CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			},
-			ExpiresAt: time.Now().Add(24 * time.Hour),
+	if ok {
+		if user == s.cfg.AdminBasicAuthUser && pass == s.cfg.AdminBasicAuthPass {
+			writeJSON(w, http.StatusOK, authMeResponse{
+				User: auth.PublicUser{
+					ID:        "admin",
+					FullName:  "System Administrator",
+					Email:     "admin@system",
+					Role:      auth.RoleAdmin,
+					Plan:      auth.PlanMonthly,
+					CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				},
+				ExpiresAt: time.Now().Add(24 * time.Hour),
+			})
+			return
+		}
+		// If basic auth was provided but is incorrect, fail immediately with clear error
+		writeJSON(w, http.StatusUnauthorized, map[string]any{
+			"error": "invalid admin credentials",
+			"code":  "invalid_admin_credentials",
 		})
 		return
 	}
