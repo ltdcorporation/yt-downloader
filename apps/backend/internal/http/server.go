@@ -180,7 +180,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		}
 	}
 
-	return &Server{
+	server := &Server{
 		cfg:             cfg,
 		logger:          logger,
 		resolver:        resolver,
@@ -197,6 +197,76 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		avatarService:   avatarService,
 		origins:         parseAllowedOrigins(cfg.CORSAllowedOrigins),
 		limiter:         newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+	}
+
+	server.seedDummyUsers()
+
+	return server
+}
+
+func (s *Server) seedDummyUsers() {
+	if s.authStore == nil {
+		return
+	}
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// 4 Free Users
+	freeUsers := []struct {
+		ID       string
+		Name     string
+		Email    string
+	}{
+		{"usr_dummy_free1", "Free User 1", "free1@example.com"},
+		{"usr_dummy_free2", "Free User 2", "free2@example.com"},
+		{"usr_dummy_free3", "Free User 3", "free3@example.com"},
+		{"usr_dummy_free4", "Free User 4", "free4@example.com"},
+	}
+
+	// 6 Subscribed Users
+	subscribedUsers := []struct {
+		ID   string
+		Name string
+		Email string
+		Plan auth.Plan
+	}{
+		{"usr_dummy_daily1", "Daily Subscriber 1", "daily1@example.com", auth.PlanDaily},
+		{"usr_dummy_daily2", "Daily Subscriber 2", "daily2@example.com", auth.PlanDaily},
+		{"usr_dummy_weekly1", "Weekly Subscriber 1", "weekly1@example.com", auth.PlanWeekly},
+		{"usr_dummy_weekly2", "Weekly Subscriber 2", "weekly2@example.com", auth.PlanWeekly},
+		{"usr_dummy_monthly1", "Monthly Subscriber 1", "monthly1@example.com", auth.PlanMonthly},
+		{"usr_dummy_monthly2", "Monthly Subscriber 2", "monthly2@example.com", auth.PlanMonthly},
+	}
+
+	dummyHash := "$2a$10$7EqJtq98hPqEX7fNZaFWoOe2fN5z9Yx8RJWb1x1o1t4bm/FvGV8e6" // change-me
+
+	for _, u := range freeUsers {
+		_ = s.authStore.CreateUser(ctx, auth.User{
+			ID:           u.ID,
+			FullName:     u.Name,
+			Email:        u.Email,
+			PasswordHash: dummyHash,
+			Role:         auth.RoleUser,
+			Plan:         auth.PlanFree,
+			CreatedAt:    now.Add(-24 * time.Hour),
+			UpdatedAt:    now.Add(-24 * time.Hour),
+		})
+	}
+
+	for i, u := range subscribedUsers {
+		expiresAt := now.Add(30 * 24 * time.Hour)
+		_ = s.authStore.CreateUser(ctx, auth.User{
+			ID:            u.ID,
+			FullName:      u.Name,
+			Email:         u.Email,
+			PasswordHash:  dummyHash,
+			Role:          auth.RoleUser,
+			Plan:          u.Plan,
+			PlanExpiresAt: &expiresAt,
+			CreatedAt:     now.Add(time.Duration(-i) * time.Hour),
+			UpdatedAt:     now.Add(time.Duration(-i) * time.Hour),
+		})
 	}
 }
 

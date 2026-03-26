@@ -32,7 +32,7 @@ interface UserData {
   downloads: number;
 }
 
-const USERS_PER_PAGE = 20;
+const USERS_PER_PAGE = 5;
 
 export default function AdminUsersPage() {
   const { currentUser, logout, isAuthChecking, setCurrentUser, setIsAuthChecking } = useAuthStore();
