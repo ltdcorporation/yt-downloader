@@ -778,3 +778,20 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 - [x] add/trim-heatmap-modal: fix commit sebelumnya
 - [x] add/trim-heatmap-modal: fix warning pada commit sebelumnya
 - [x] add/trim-heatmap-modal: fix heatmap button and more settings on download button in modal popup
+
+---
+
+## ) Update: 26/03/2026
+
+### Branch: `create/add-subscription-and-ui-admin`
+- [x] fix/cleaning-ui-admin: hapus beberapa mock ui pada /admin/users
+- [ ] fix/cleaning-ui-admin: penambahan ui settings di admin page
+- [ ] fix/cleaning-ui-admin: hapus section yang tidak perlu di setting
+
+### Branch: `add/implements-roles`
+- [x] add/implements-roles: implementasi roles admin and users (free and subs), link to /admin/users
+- [ ] add/implements-roles: fix commit sebelumnya dan mengganti alert login admin dengan modal pop up sederhana
+- [ ] add/implements-roles: fix modal pop up ketika mengakses "/admin" yang tidak muncul
+- [ ] add/implements-roles: fix tidak bisa login menggunakan kredensial admin
+- [ ] add/implements-roles: fix tidak bisa mengakses opsi di page admin
+- [ ] add/implements-roles: penambahan dummy user random tipe subs dan pegination tabel admin opsi users
