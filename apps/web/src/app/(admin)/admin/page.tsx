@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store";
 import { api, APIError } from "@/lib/api";
+import { persistAdminAuth } from "@/lib/auth-session";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
@@ -160,8 +161,8 @@ export default function AdminDashboardPage() {
     setIsLoggingIn(true);
     try {
       const res = await api.loginAdmin(loginForm.user, loginForm.pass);
-      // We store the admin credentials in session storage for subsequent requests in this session
-      sessionStorage.setItem("admin_auth", btoa(`${loginForm.user}:${loginForm.pass}`));
+      const credentialsBase64 = btoa(`${loginForm.user}:${loginForm.pass}`);
+      persistAdminAuth(res.user, credentialsBase64);
       setCurrentUser(res.user);
       setShowLoginModal(false);
       setIsPageLoading(false);
@@ -180,7 +181,6 @@ export default function AdminDashboardPage() {
     } catch {
       // noop
     }
-    sessionStorage.removeItem("admin_auth");
     logout();
     router.push("/");
   };

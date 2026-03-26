@@ -92,11 +92,13 @@ export default function AdminMaintenancePage() {
   }, [isAuthChecking, refreshAuthState]);
 
   useEffect(() => {
-    if (!isAuthChecking && !currentUser) {
-      router.push("/");
-      return;
+    if (!isAuthChecking) {
+      if (!currentUser || currentUser.role !== "admin") {
+        router.push("/");
+        return;
+      }
+      setIsPageLoading(false);
     }
-    setIsPageLoading(false);
   }, [currentUser, isAuthChecking, router]);
 
   const handleLogout = async () => {

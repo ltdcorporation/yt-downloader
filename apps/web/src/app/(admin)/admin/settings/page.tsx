@@ -135,12 +135,11 @@ export default function AdminSettingsPage() {
   }, [currentUser, router, setCurrentUser]);
 
   useEffect(() => {
-    if (!isAuthChecking && !currentUser) {
-      router.push("/");
-      return;
-    }
-
-    if (currentUser) {
+    if (!isAuthChecking) {
+      if (!currentUser || currentUser.role !== "admin") {
+        router.push("/");
+        return;
+      }
       void loadSettings();
     }
   }, [currentUser, isAuthChecking, loadSettings, router]);

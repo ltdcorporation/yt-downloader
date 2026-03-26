@@ -23,9 +23,9 @@ function safeEqual(left, right) {
 export function middleware(request) {
 	const url = new URL(request.url);
 	
-	// Allow the main /admin page to load without middleware protection
-	// so it can show its own login modal in the browser.
-	if (url.pathname === "/admin") {
+	// Allow all /admin pages to load without middleware protection
+	// so the frontend components can handle their own login state and show modals.
+	if (url.pathname.startsWith("/admin")) {
 		return NextResponse.next();
 	}
 

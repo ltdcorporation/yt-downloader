@@ -3,6 +3,7 @@ import { type AuthUser } from "@/lib/api";
 import {
   clearAuthSessionSnapshot,
   readAuthSessionSnapshot,
+  clearAdminAuth,
 } from "@/lib/auth-session";
 
 interface AuthState {
@@ -28,6 +29,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSignupModalOpen: (isOpen) => set({ isSignupModalOpen: isOpen }),
   logout: () => {
     clearAuthSessionSnapshot();
+    clearAdminAuth();
     set({ currentUser: null });
   },
 }));

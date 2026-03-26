@@ -1,4 +1,5 @@
 import { detectPlatform } from "./utils";
+import { readAdminAuthCredentials } from "./auth-session";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -265,7 +266,7 @@ export async function fetcher<T>(
 
   // Automatically attach admin auth if present in sessionStorage
   if (typeof window !== "undefined") {
-    const adminAuth = sessionStorage.getItem("admin_auth");
+    const adminAuth = readAdminAuthCredentials();
     if (adminAuth && !headers.has("Authorization")) {
       headers.set("Authorization", `Basic ${adminAuth}`);
     }

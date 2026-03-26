@@ -120,7 +120,7 @@ export default function SettingsSidebar({
 
         <nav className={`flex-1 px-4 space-y-1 ${isCollapsed ? "lg:px-2" : ""}`}>
           {items.map((item) => (
-            <a
+            <Link
               key={item.label}
               className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors group ${
                 isCollapsed ? "lg:justify-center" : ""
@@ -147,7 +147,7 @@ export default function SettingsSidebar({
                   {item.label}
                 </span>
               )}
-            </a>
+            </Link>
           ))}
         </nav>
 
