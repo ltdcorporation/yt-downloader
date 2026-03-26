@@ -271,6 +271,11 @@ export async function fetcher<T>(
     }
   }
 
+  // Debug (temporary): Check headers if it's the auth/me endpoint
+  if (endpoint.includes("/auth/me")) {
+    console.log(`[API Debug] Fetching ${endpoint} with Auth:`, headers.has("Authorization"));
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     credentials: "include",
     ...options,
@@ -290,12 +295,14 @@ export async function fetcherWithAuth<T>(
   options?: RequestInit,
 ): Promise<T> {
   const credentials = btoa(`${auth.user}:${auth.pass}`);
-  const headers = new Headers(options?.headers);
-  headers.set("Authorization", `Basic ${credentials}`);
-
+  
+  // We explicitly pass the Authorization header in the options
   return fetcher<T>(endpoint, {
     ...options,
-    headers,
+    headers: {
+      ...options?.headers,
+      "Authorization": `Basic ${credentials}`,
+    },
   });
 }
 
