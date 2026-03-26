@@ -21,6 +21,14 @@ function safeEqual(left, right) {
 }
 
 export function middleware(request) {
+	const url = new URL(request.url);
+	
+	// Allow the main /admin page to load without middleware protection
+	// so it can show its own login modal in the browser.
+	if (url.pathname === "/admin") {
+		return NextResponse.next();
+	}
+
 	const expectedUser = process.env.ADMIN_BASIC_AUTH_USER || "";
 	const expectedPass = process.env.ADMIN_BASIC_AUTH_PASS || "";
 	if (!expectedUser || !expectedPass) {

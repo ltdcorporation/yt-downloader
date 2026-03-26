@@ -144,16 +144,15 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     if (!isAuthChecking) {
-      if (!currentUser) {
+      if (!currentUser || currentUser.role !== "admin") {
         setShowLoginModal(true);
-      } else if (currentUser.role !== "admin") {
-        router.push("/");
+        setIsPageLoading(false);
       } else {
         setShowLoginModal(false);
         setIsPageLoading(false);
       }
     }
-  }, [currentUser, isAuthChecking, router]);
+  }, [currentUser, isAuthChecking]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
