@@ -250,14 +250,24 @@ export async function fetcher<T>(
   endpoint: string,
   options?: RequestInit,
 ): Promise<T> {
+  const headers = new Headers({
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    ...options?.headers,
+  });
+
+  // Automatically attach admin auth if present in sessionStorage
+  if (typeof window !== "undefined") {
+    const adminAuth = sessionStorage.getItem("admin_auth");
+    if (adminAuth && !headers.has("Authorization")) {
+      headers.set("Authorization", `Basic ${adminAuth}`);
+    }
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     credentials: "include",
     ...options,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
@@ -265,6 +275,21 @@ export async function fetcher<T>(
   }
 
   return parseJSONResponse<T>(response);
+}
+
+export async function fetcherWithAuth<T>(
+  endpoint: string,
+  auth: { user: string; pass: string },
+  options?: RequestInit,
+): Promise<T> {
+  const credentials = btoa(`${auth.user}:${auth.pass}`);
+  const headers = new Headers(options?.headers);
+  headers.set("Authorization", `Basic ${credentials}`);
+
+  return fetcher<T>(endpoint, {
+    ...options,
+    headers,
+  });
 }
 
 async function fetcherFormData<T>(
@@ -332,6 +357,9 @@ export const api = {
         keep_logged_in: payload.keepLoggedIn ?? false,
       }),
     }),
+
+  loginAdmin: (user: string, pass: string) =>
+    fetcherWithAuth<AuthMeResponse>("/v1/auth/me", { user, pass }),
 
   me: () => fetcher<AuthMeResponse>("/v1/auth/me"),
 

@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 
 function unauthorized() {
-	const response = new NextResponse("Authentication required", {
+	return new NextResponse("Authentication required", {
 		status: 401,
 	});
-	response.headers.set("WWW-Authenticate", 'Basic realm="admin"');
-	return response;
 }
 
 function safeEqual(left, right) {

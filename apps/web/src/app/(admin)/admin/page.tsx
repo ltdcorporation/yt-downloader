@@ -117,6 +117,10 @@ export default function AdminDashboardPage() {
 
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginForm, setLoginForm] = useState({ user: "", pass: "" });
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const refreshAuthState = useCallback(async () => {
     try {
@@ -139,12 +143,35 @@ export default function AdminDashboardPage() {
   }, [isAuthChecking, refreshAuthState]);
 
   useEffect(() => {
-    if (!isAuthChecking && !currentUser) {
-      router.push("/");
-      return;
+    if (!isAuthChecking) {
+      if (!currentUser) {
+        setShowLoginModal(true);
+      } else if (currentUser.role !== "admin") {
+        router.push("/");
+      } else {
+        setShowLoginModal(false);
+        setIsPageLoading(false);
+      }
     }
-    setIsPageLoading(false);
   }, [currentUser, isAuthChecking, router]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setIsLoggingIn(true);
+    try {
+      const res = await api.loginAdmin(loginForm.user, loginForm.pass);
+      // We store the admin credentials in session storage for subsequent requests in this session
+      sessionStorage.setItem("admin_auth", btoa(`${loginForm.user}:${loginForm.pass}`));
+      setCurrentUser(res.user);
+      setShowLoginModal(false);
+      setIsPageLoading(false);
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : "Invalid credentials");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   const pathname = usePathname();
 
@@ -154,6 +181,7 @@ export default function AdminDashboardPage() {
     } catch {
       // noop
     }
+    sessionStorage.removeItem("admin_auth");
     logout();
     router.push("/");
   };
@@ -166,10 +194,74 @@ export default function AdminDashboardPage() {
     console.log("Contact support");
   };
 
-  if (isAuthChecking || isPageLoading) {
+  if (isAuthChecking || (isPageLoading && !showLoginModal)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (showLoginModal) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-8">
+          <div className="mb-8 text-center">
+            <div className="inline-flex items-center justify-center size-14 rounded-xl bg-primary/10 text-primary mb-4">
+              <SealCheck size={32} weight="fill" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-slate-50">Admin Access</h1>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Please enter your system credentials</p>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Username</label>
+              <input
+                type="text"
+                value={loginForm.user}
+                onChange={(e) => setLoginForm({ ...loginForm, user: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-slate-900 dark:text-slate-100 font-medium"
+                placeholder="admin"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 ml-1">Password</label>
+              <input
+                type="password"
+                value={loginForm.pass}
+                onChange={(e) => setLoginForm({ ...loginForm, pass: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-slate-900 dark:text-slate-100 font-medium"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            {loginError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800 rounded-lg flex items-center gap-3 animate-shake">
+                <Warning size={18} className="text-rose-500 flex-shrink-0" />
+                <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{loginError}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full bg-primary hover:bg-primary-dark text-white font-black py-3.5 rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98] disabled:opacity-70 disabled:active:scale-100 mt-2"
+            >
+              {isLoggingIn ? "Verifying..." : "Grant Access"}
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="w-full bg-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 font-bold py-2 text-xs transition-colors"
+            >
+              Back to Homepage
+            </button>
+          </form>
+        </div>
       </div>
     );
   }

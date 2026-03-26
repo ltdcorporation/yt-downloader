@@ -126,6 +126,23 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Try Basic Auth first (common for admin access via config)
+	user, pass, ok := r.BasicAuth()
+	if ok && user == s.cfg.AdminBasicAuthUser && pass == s.cfg.AdminBasicAuthPass {
+		writeJSON(w, http.StatusOK, authMeResponse{
+			User: auth.PublicUser{
+				ID:        "admin",
+				FullName:  "System Administrator",
+				Email:     "admin@system",
+				Role:      auth.RoleAdmin,
+				Plan:      auth.PlanMonthly,
+				CreatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+			ExpiresAt: time.Now().Add(24 * time.Hour),
+		})
+		return
+	}
+
 	token := s.readSessionToken(r)
 	identity, err := s.authService.AuthenticateToken(r.Context(), token)
 	if err != nil {
