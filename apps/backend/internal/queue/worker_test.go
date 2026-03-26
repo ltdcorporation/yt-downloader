@@ -294,9 +294,12 @@ func makeWorkerForTest(ytdlpBinary string, store jobStoreUpdater, r2 r2Storage) 
 
 func makeWorkerForTestWithHistory(ytdlpBinary string, store jobStoreUpdater, r2 r2Storage, historyStore historyStoreUpdater) *Worker {
 	cfg := config.Config{
-		YTDLPBinary:         ytdlpBinary,
-		YTDLPJSRuntimes:     "",
-		MP3OutputTTLMinutes: 60,
+		YTDLPBinary:              ytdlpBinary,
+		YTDLPJSRuntimes:          "",
+		MP3OutputTTLMinutes:      60,
+		VideoCutOutputTTLMinutes: 60,
+		VideoCutFFmpegBinary:     "ffmpeg",
+		VideoCutMaxDurationSec:   180,
 	}
 	return NewWorker(cfg, log.New(io.Discard, "", 0), store, r2, historyStore)
 }

@@ -24,6 +24,14 @@ import {
 } from "@/lib/api";
 import { detectPlatform } from "@/lib/utils";
 
+export interface YoutubeCutSelection {
+  mode: "manual" | "heatmap";
+  manual?: {
+    startSec: number;
+    endSec: number;
+  };
+}
+
 interface DownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -31,7 +39,7 @@ interface DownloadModalProps {
   result: ResolveResponse | null;
   isLoading?: boolean;
   preferredQuality?: SettingsQuality | null;
-  onConfirmDownload: (formatId: string) => void;
+  onConfirmDownload: (formatId: string, options?: { youtubeCut?: YoutubeCutSelection }) => void;
   onConfirmMp3: () => void;
   onRetryResolve?: () => void;
 }
@@ -105,6 +113,27 @@ function formatDurationToHMS(totalSeconds: number): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function parseHMSToSeconds(value: string): number | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const hours = Number.parseInt(match[1], 10);
+  const minutes = Number.parseInt(match[2], 10);
+  const seconds = Number.parseInt(match[3], 10);
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return null;
+  }
+  if (minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
+    return null;
+  }
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
 function formatFileSize(bytes?: number): string {
   if (!bytes || bytes <= 0) {
     return "Unknown size";
@@ -142,6 +171,7 @@ export default function DownloadModal({
   const [startTime, setStartTime] = useState("00:00:00");
   const [endTime, setEndTime] = useState("00:00:00");
   const [isHeatmapCut, setIsHeatmapCut] = useState(false);
+  const [trimError, setTrimError] = useState("");
 
   const platform = detectPlatform(sourceUrl);
   const isYoutube = platform === "youtube";
@@ -219,11 +249,13 @@ export default function DownloadModal({
     if (type === "start") setStartTime(value);
     else setEndTime(value);
     setIsHeatmapCut(false);
+    setTrimError("");
   };
 
   const handleHeatmapToggle = () => {
     const nextVal = !isHeatmapCut;
     setIsHeatmapCut(nextVal);
+    setTrimError("");
     if (nextVal && result?.duration_seconds) {
       setStartTime("00:00:00");
       setEndTime(formatDurationToHMS(result.duration_seconds));
@@ -244,10 +276,12 @@ export default function DownloadModal({
         setStartTime("00:00:00");
         setIsHeatmapCut(false);
       }
+      setTrimError("");
     } else {
       document.body.style.overflow = "";
       setIsConfirming(false);
       setSelectedMediaIds([]);
+      setTrimError("");
     }
 
     return () => {
@@ -276,6 +310,50 @@ export default function DownloadModal({
     });
   }, [isOpen, mp4Formats, preferredQuality]);
 
+  const buildYoutubeCutSelection = (): {
+    selection?: YoutubeCutSelection;
+    error?: string;
+  } => {
+    if (!isYoutube || !result?.duration_seconds) {
+      return {};
+    }
+
+    if (isHeatmapCut) {
+      return { selection: { mode: "heatmap" } };
+    }
+
+    const parsedStart = parseHMSToSeconds(startTime);
+    const parsedEnd = parseHMSToSeconds(endTime);
+    if (parsedStart === null || parsedEnd === null) {
+      return { error: "Format waktu wajib HH:MM:SS." };
+    }
+    if (parsedStart < 0) {
+      return { error: "Start time tidak boleh negatif." };
+    }
+    if (parsedEnd <= parsedStart) {
+      return { error: "End time harus lebih besar dari start time." };
+    }
+    if (parsedEnd > result.duration_seconds) {
+      return {
+        error: `End time tidak boleh melebihi durasi video (${formatDurationToHMS(result.duration_seconds)}).`,
+      };
+    }
+
+    if (parsedStart === 0 && parsedEnd === result.duration_seconds) {
+      return {};
+    }
+
+    return {
+      selection: {
+        mode: "manual",
+        manual: {
+          startSec: parsedStart,
+          endSec: parsedEnd,
+        },
+      },
+    };
+  };
+
   if (!isOpen) {
     return null;
   }
@@ -283,16 +361,28 @@ export default function DownloadModal({
   const handleDownloadTrigger = () => {
     if (isCarousel) {
       if (selectedMediaIds.length === 0) return;
+      setTrimError("");
       setIsConfirming(true);
       return;
     }
     if (isImageOnly) {
+      setTrimError("");
       setIsConfirming(true);
       return;
     }
     if (!sourceUrl || !selectedFormat) {
       return;
     }
+
+    if (isYoutube) {
+      const validation = buildYoutubeCutSelection();
+      if (validation.error) {
+        setTrimError(validation.error);
+        return;
+      }
+      setTrimError("");
+    }
+
     setIsConfirming(true);
   };
 
@@ -317,7 +407,20 @@ export default function DownloadModal({
       return;
     }
 
-    onConfirmDownload(selectedFormat.id);
+    let options: { youtubeCut?: YoutubeCutSelection } | undefined;
+    if (isYoutube) {
+      const validation = buildYoutubeCutSelection();
+      if (validation.error) {
+        setTrimError(validation.error);
+        setIsConfirming(false);
+        return;
+      }
+      if (validation.selection) {
+        options = { youtubeCut: validation.selection };
+      }
+    }
+
+    onConfirmDownload(selectedFormat.id, options);
     setIsConfirming(false);
   };
 
@@ -635,6 +738,12 @@ export default function DownloadModal({
                   Note: Heatmap Cut will automatically find and cut the most viral/highlighted part of this video.
                 </p>
               )}
+
+              {trimError ? (
+                <p className="text-[11px] text-rose-700 dark:text-rose-300 font-semibold bg-rose-50 dark:bg-rose-950/30 p-2 rounded-lg border border-rose-100 dark:border-rose-900/50">
+                  {trimError}
+                </p>
+              ) : null}
             </div>
           )}
 

@@ -11,7 +11,7 @@ import {
   InstagramLogo,
   XLogo,
 } from "@phosphor-icons/react";
-import DownloadModal from "./DownloadModal";
+import DownloadModal, { type YoutubeCutSelection } from "./DownloadModal";
 import ProcessingModal from "./ProcessingModal";
 import {
   api,
@@ -36,13 +36,17 @@ export default function InputBar() {
   const [errorMessage, setErrorMessage] = useState("");
   const [resolveErrorCode, setResolveErrorCode] = useState("");
   const [lastAttemptUrl, setLastAttemptUrl] = useState("");
-  const [processingKind, setProcessingKind] = useState<"mp4" | "mp3" | null>(
-    null,
-  );
+  const [processingKind, setProcessingKind] = useState<
+    "mp4" | "mp3" | "video-cut" | null
+  >(null);
   const [mp3JobId, setMp3JobId] = useState("");
   const [mp3JobStatus, setMp3JobStatus] = useState("");
   const [mp3DownloadUrl, setMp3DownloadUrl] = useState("");
   const [mp3JobError, setMp3JobError] = useState("");
+  const [videoCutJobId, setVideoCutJobId] = useState("");
+  const [videoCutJobStatus, setVideoCutJobStatus] = useState("");
+  const [videoCutDownloadUrl, setVideoCutDownloadUrl] = useState("");
+  const [videoCutJobError, setVideoCutJobError] = useState("");
   const [preferredQuality, setPreferredQuality] =
     useState<SettingsQuality | null>(null);
 
@@ -86,6 +90,10 @@ export default function InputBar() {
     setMp3JobStatus("");
     setMp3DownloadUrl("");
     setMp3JobError("");
+    setVideoCutJobId("");
+    setVideoCutJobStatus("");
+    setVideoCutDownloadUrl("");
+    setVideoCutJobError("");
   }, []);
 
   useEffect(() => {
@@ -208,8 +216,51 @@ export default function InputBar() {
     setIsModalOpen(false);
   };
 
-  const startFinalDownload = (formatId: string) => {
+  const startFinalDownload = async (
+    formatId: string,
+    options?: { youtubeCut?: YoutubeCutSelection },
+  ) => {
     if (!resolvedUrl || !resolveResult) return;
+
+    const youtubeCut = options?.youtubeCut;
+    const shouldUseVideoCut = Boolean(youtubeCut);
+
+    if (shouldUseVideoCut && youtubeCut) {
+      setIsModalOpen(false);
+      setProcessingKind("video-cut");
+      setIsProcessingModalOpen(true);
+      setVideoCutJobId("");
+      setVideoCutJobStatus("queued");
+      setVideoCutDownloadUrl("");
+      setVideoCutJobError("");
+
+      try {
+        const created = await api.createVideoCutJob({
+          url: resolvedUrl,
+          formatId,
+          cutMode: youtubeCut.mode,
+          ...(youtubeCut.mode === "manual" && youtubeCut.manual
+            ? {
+                manual: {
+                  startSec: youtubeCut.manual.startSec,
+                  endSec: youtubeCut.manual.endSec,
+                },
+              }
+            : {}),
+        });
+
+        setVideoCutJobId(created.job_id);
+        setVideoCutJobStatus(created.status || "queued");
+      } catch (error) {
+        setVideoCutJobStatus("failed");
+        setVideoCutJobError(
+          error instanceof Error
+            ? error.message
+            : "Failed to start video-cut job.",
+        );
+      }
+      return;
+    }
 
     setIsModalOpen(false);
     setProcessingKind("mp4");
@@ -297,6 +348,53 @@ export default function InputBar() {
     };
   }, [isProcessingModalOpen, processingKind, mp3JobId]);
 
+  useEffect(() => {
+    if (
+      !isProcessingModalOpen ||
+      processingKind !== "video-cut" ||
+      !videoCutJobId
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const pollOnce = async () => {
+      try {
+        const status = await api.getJobStatus(videoCutJobId);
+        if (cancelled) return;
+
+        setVideoCutJobStatus(status.status || "");
+        setVideoCutDownloadUrl(status.download_url || "");
+        setVideoCutJobError(status.error || "");
+
+        if (status.status === "done" || status.status === "failed") {
+          return;
+        }
+
+        timeoutId = setTimeout(pollOnce, 2000);
+      } catch (error) {
+        if (cancelled) return;
+        setVideoCutJobError(
+          error instanceof Error
+            ? error.message
+            : "Failed to check video-cut job status.",
+        );
+        timeoutId = setTimeout(pollOnce, 2500);
+      }
+    };
+
+    void pollOnce();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [isProcessingModalOpen, processingKind, videoCutJobId]);
+
   type ProcessingModalState = {
     status: "processing" | "completed" | "failed";
     heading: string;
@@ -321,6 +419,57 @@ export default function InputBar() {
         status: "processing",
         heading: "Menyiapkan download",
         description: "Browser kamu akan mulai mengunduh setelah redirect siap.",
+        secondaryActionLabel: "Tutup",
+        onSecondaryAction: closeProcessingModal,
+      };
+    }
+
+    if (processingKind === "video-cut") {
+      const normalizedVideoCut = (videoCutJobStatus || "").toLowerCase();
+      const isDone = normalizedVideoCut === "done";
+      const isFailed = normalizedVideoCut === "failed";
+      const hasDownload = Boolean(videoCutDownloadUrl);
+
+      if (isDone && hasDownload) {
+        return {
+          status: "completed",
+          heading: "Video cut siap",
+          description: "Klik tombol di bawah untuk mengunduh hasil video cut.",
+          primaryActionLabel: "Download Video",
+          onPrimaryAction: () => {
+            const link = document.createElement("a");
+            link.href = videoCutDownloadUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            closeProcessingModal();
+          },
+          secondaryActionLabel: "Tutup",
+          onSecondaryAction: closeProcessingModal,
+        };
+      }
+
+      if (isFailed) {
+        return {
+          status: "failed",
+          heading: "Gagal memotong video",
+          description: videoCutJobError || "Job video-cut gagal diproses.",
+          secondaryActionLabel: "Tutup",
+          onSecondaryAction: closeProcessingModal,
+        };
+      }
+
+      return {
+        status: "processing",
+        heading:
+          normalizedVideoCut === "processing"
+            ? "Lagi motong videonya"
+            : "Lagi antriin video-cut",
+        description: videoCutJobId
+          ? `Job ID: ${videoCutJobId}`
+          : "Sedang memulai job...",
         secondaryActionLabel: "Tutup",
         onSecondaryAction: closeProcessingModal,
       };
@@ -380,6 +529,10 @@ export default function InputBar() {
     mp3JobStatus,
     processingKind,
     startMp3Download,
+    videoCutDownloadUrl,
+    videoCutJobError,
+    videoCutJobId,
+    videoCutJobStatus,
   ]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

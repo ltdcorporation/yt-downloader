@@ -118,6 +118,7 @@ POST /v1/tiktok/resolve     { url }
 POST /v1/tt/resolve         { url } (alias)
 GET  /v1/download/mp4       ?url=&format_id=
 POST /v1/jobs/mp3           { url }
+POST /v1/jobs/video-cut     { url, format_id, cut_mode, manual?/heatmap? }
 GET  /v1/jobs/:id
 GET  /admin/jobs            (basic auth)
 ```
@@ -125,6 +126,7 @@ GET  /admin/jobs            (basic auth)
 ## Notes
 
 - YouTube resolve response now includes optional heatmap intelligence payload (`heatmap`, `key_moments`, `heatmap_meta`) for trim/cut orchestration.
+- Video cut queue endpoint (`POST /v1/jobs/video-cut`) is now available for YouTube with `manual` and `heatmap` cut modes.
 - MP4 redirects now require `url` + `format_id` (no raw target redirect).
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).
@@ -145,6 +147,11 @@ GET  /admin/jobs            (basic auth)
 - TikTok resolver supports multi-cookie fallback via `TT_COOKIES_FILES` (comma-separated files) and/or `TT_COOKIES_DIR` (directory scan). Public attempt can be toggled with `TT_RESOLVE_TRY_WITHOUT_COOKIES`.
 - TikTok resolver also returns machine-readable warning code `tt_hls_only_not_supported` for HLS-only posts (current design: no HLS remux fallback yet).
 - MP3 artifact object key supports prefix via `R2_KEY_PREFIX` (example: `yt-downloader/prod`).
+- Video-cut runtime controls:
+  - `YTD_HEATMAP_TRIM_ENABLED` (feature flag)
+  - `VIDEO_CUT_MAX_DURATION_SEC`
+  - `VIDEO_CUT_OUTPUT_TTL_MINUTES`
+  - `VIDEO_CUT_FFMPEG_BINARY`
 - CORS allow-list is controlled by `CORS_ALLOWED_ORIGINS`.
 - Jobs and `job_errors` tables are auto-created on first access.
 

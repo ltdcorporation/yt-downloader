@@ -30,9 +30,13 @@ type Config struct {
 	TTCookiesFiles             string
 	TTResolveTryWithoutCookies bool
 
-	MP3Bitrate          int
-	MP3OutputTTLMinutes int
-	JobRetentionDays    int
+	MP3Bitrate               int
+	MP3OutputTTLMinutes      int
+	VideoCutOutputTTLMinutes int
+	VideoCutMaxDurationSec   int
+	VideoCutFFmpegBinary     string
+	HeatmapTrimEnabled       bool
+	JobRetentionDays         int
 
 	RedisAddr     string
 	RedisPassword string
@@ -93,6 +97,10 @@ func Load() Config {
 		TTResolveTryWithoutCookies:  getenvBool("TT_RESOLVE_TRY_WITHOUT_COOKIES", true),
 		MP3Bitrate:                  getenvInt("MP3_BITRATE", 128),
 		MP3OutputTTLMinutes:         getenvInt("MP3_OUTPUT_TTL_MINUTES", 60),
+		VideoCutOutputTTLMinutes:    getenvInt("VIDEO_CUT_OUTPUT_TTL_MINUTES", 60),
+		VideoCutMaxDurationSec:      getenvInt("VIDEO_CUT_MAX_DURATION_SEC", 180),
+		VideoCutFFmpegBinary:        getenv("VIDEO_CUT_FFMPEG_BINARY", "ffmpeg"),
+		HeatmapTrimEnabled:          getenvBool("YTD_HEATMAP_TRIM_ENABLED", true),
 		JobRetentionDays:            getenvInt("JOB_RETENTION_DAYS", 14),
 		RedisAddr:                   getenv("REDIS_ADDR", "127.0.0.1:6379"),
 		RedisPassword:               getenv("REDIS_PASSWORD", ""),

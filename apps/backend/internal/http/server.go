@@ -260,6 +260,7 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/tiktok/resolve", s.handleResolveTikTok)
 	r.Post("/v1/tt/resolve", s.handleResolveTikTok)
 	r.Post("/v1/jobs/mp3", s.handleCreateMP3Job)
+	r.Post("/v1/jobs/video-cut", s.handleCreateVideoCutJob)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
 	r.With(s.basicAuth).Get("/admin/jobs", s.handleAdminJobs)
@@ -912,6 +913,16 @@ func writeError(w http.ResponseWriter, code int, message string) {
 	writeJSON(w, code, map[string]any{
 		"error": message,
 	})
+}
+
+func writeErrorWithCode(w http.ResponseWriter, statusCode int, errorCode string, message string) {
+	payload := map[string]any{
+		"error": message,
+	}
+	if strings.TrimSpace(errorCode) != "" {
+		payload["code"] = strings.TrimSpace(errorCode)
+	}
+	writeJSON(w, statusCode, payload)
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

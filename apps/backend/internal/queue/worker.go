@@ -20,7 +20,10 @@ import (
 	"yt-downloader/backend/internal/jobs"
 )
 
-const TaskConvertMP3 = "mp3:convert"
+const (
+	TaskConvertMP3 = "mp3:convert"
+	TaskVideoCut   = "video:cut"
+)
 
 type ConvertMP3Payload struct {
 	JobID       string            `json:"job_id"`
@@ -30,6 +33,25 @@ type ConvertMP3Payload struct {
 	OutputKey   string            `json:"output_key"`
 	BitrateKbps int               `json:"bitrate_kbps"`
 }
+
+type VideoCutPayload struct {
+	JobID            string            `json:"job_id"`
+	SourceURL        string            `json:"source_url"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	UserAgent        string            `json:"user_agent,omitempty"`
+	FormatID         string            `json:"format_id"`
+	OutputKey        string            `json:"output_key"`
+	CutMode          string            `json:"cut_mode"`
+	ManualStartSec   int               `json:"manual_start_sec,omitempty"`
+	ManualEndSec     int               `json:"manual_end_sec,omitempty"`
+	HeatmapTargetSec int               `json:"heatmap_target_sec,omitempty"`
+	HeatmapWindowSec int               `json:"heatmap_window_sec,omitempty"`
+}
+
+const (
+	VideoCutModeManual  = "manual"
+	VideoCutModeHeatmap = "heatmap"
+)
 
 type jobStoreUpdater interface {
 	Update(ctx context.Context, jobID string, mutate func(*jobs.Record)) (jobs.Record, error)
@@ -94,13 +116,15 @@ func (w *Worker) Run(_ context.Context) error {
 		asynq.Config{
 			Concurrency: 8,
 			Queues: map[string]int{
-				"mp3": 1,
+				"mp3":   1,
+				"video": 1,
 			},
 		},
 	)
 
 	mux := asynq.NewServeMux()
 	mux.HandleFunc(TaskConvertMP3, w.handleConvertMP3)
+	mux.HandleFunc(TaskVideoCut, w.handleVideoCut)
 
 	return server.Run(mux)
 }
@@ -159,13 +183,99 @@ func (w *Worker) handleConvertMP3(_ context.Context, task *asynq.Task) error {
 			return err
 		}
 	}
-	w.markHistoryAttemptDone(payload.JobID, payload.OutputKey, downloadURL, expiresAt)
+	w.markHistoryAttemptDone(payload.JobID, payload.OutputKey, downloadURL, expiresAt, nil)
 
 	w.logger.Printf("convert mp3 done job=%s output_key=%s", payload.JobID, payload.OutputKey)
 	return nil
 }
 
+func (w *Worker) handleVideoCut(_ context.Context, task *asynq.Task) error {
+	var payload VideoCutPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return err
+	}
+	if payload.JobID == "" || payload.SourceURL == "" || payload.FormatID == "" || payload.OutputKey == "" {
+		return errors.New("invalid payload")
+	}
+	payload.CutMode = strings.TrimSpace(strings.ToLower(payload.CutMode))
+	if payload.CutMode == "" {
+		payload.CutMode = VideoCutModeManual
+	}
+	if payload.CutMode != VideoCutModeManual && payload.CutMode != VideoCutModeHeatmap {
+		return errors.New("invalid payload")
+	}
+	if payload.ManualEndSec <= payload.ManualStartSec {
+		return errors.New("invalid payload")
+	}
+	maxCutSec := w.cfg.VideoCutMaxDurationSec
+	if maxCutSec <= 0 {
+		maxCutSec = 180
+	}
+	if payload.ManualEndSec-payload.ManualStartSec > maxCutSec {
+		return errors.New("invalid payload")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	if w.jobStore != nil {
+		if _, err := w.jobStore.Update(ctx, payload.JobID, func(record *jobs.Record) {
+			record.Status = jobs.StatusProcessing
+			record.Error = ""
+		}); err != nil {
+			w.logger.Printf("failed to mark video-cut job processing id=%s err=%v", payload.JobID, err)
+		}
+	}
+	w.markHistoryAttemptProcessing(payload.JobID)
+
+	localFile, outputSizeBytes, cleanup, err := w.convertVideoCut(ctx, payload)
+	if err != nil {
+		return w.failJobWithCode(ctx, payload.JobID, "video_cut_failed", err)
+	}
+	defer cleanup()
+
+	if w.r2 == nil {
+		return w.failJobWithCode(ctx, payload.JobID, "video_cut_failed", errors.New("r2 client is not configured"))
+	}
+	if err := w.r2.UploadFile(ctx, payload.OutputKey, localFile); err != nil {
+		return w.failJobWithCode(ctx, payload.JobID, "video_cut_failed", err)
+	}
+
+	ttlMinutes := w.cfg.VideoCutOutputTTLMinutes
+	if ttlMinutes <= 0 {
+		ttlMinutes = w.cfg.MP3OutputTTLMinutes
+	}
+	if ttlMinutes <= 0 {
+		ttlMinutes = 60
+	}
+	downloadURL, expiresAt, err := w.r2.PresignDownloadURL(ctx, payload.OutputKey, time.Duration(ttlMinutes)*time.Minute)
+	if err != nil {
+		return w.failJobWithCode(ctx, payload.JobID, "video_cut_failed", err)
+	}
+
+	if w.jobStore != nil {
+		if _, err := w.jobStore.Update(ctx, payload.JobID, func(record *jobs.Record) {
+			record.Status = jobs.StatusDone
+			record.Error = ""
+			record.DownloadURL = downloadURL
+			record.ExpiresAt = &expiresAt
+		}); err != nil {
+			w.logger.Printf("failed to mark video-cut job done id=%s err=%v", payload.JobID, err)
+			return err
+		}
+	}
+	sizeCopy := outputSizeBytes
+	w.markHistoryAttemptDone(payload.JobID, payload.OutputKey, downloadURL, expiresAt, &sizeCopy)
+
+	w.logger.Printf("video cut done job=%s mode=%s output_key=%s", payload.JobID, payload.CutMode, payload.OutputKey)
+	return nil
+}
+
 func (w *Worker) failJob(ctx context.Context, jobID string, err error) error {
+	return w.failJobWithCode(ctx, jobID, "mp3_conversion_failed", err)
+}
+
+func (w *Worker) failJobWithCode(ctx context.Context, jobID string, errorCode string, err error) error {
 	if w.jobStore != nil && jobID != "" {
 		_, updateErr := w.jobStore.Update(ctx, jobID, func(record *jobs.Record) {
 			record.Status = jobs.StatusFailed
@@ -175,8 +285,8 @@ func (w *Worker) failJob(ctx context.Context, jobID string, err error) error {
 			w.logger.Printf("failed to mark job failed id=%s err=%v", jobID, updateErr)
 		}
 	}
-	w.markHistoryAttemptFailed(jobID, err)
-	w.logger.Printf("convert mp3 failed job=%s err=%v", jobID, err)
+	w.markHistoryAttemptFailed(jobID, strings.TrimSpace(errorCode), err)
+	w.logger.Printf("job failed id=%s code=%s err=%v", jobID, strings.TrimSpace(errorCode), err)
 	return err
 }
 
@@ -250,6 +360,118 @@ func (w *Worker) convertMP3(ctx context.Context, payload ConvertMP3Payload) (str
 	return matches[0], cleanup, nil
 }
 
+func (w *Worker) convertVideoCut(ctx context.Context, payload VideoCutPayload) (string, int64, func(), error) {
+	if w.cfg.YTDLPBinary == "" {
+		return "", 0, nil, errors.New("yt-dlp binary is not configured")
+	}
+
+	ffmpegBinary := strings.TrimSpace(w.cfg.VideoCutFFmpegBinary)
+	if ffmpegBinary == "" {
+		ffmpegBinary = "ffmpeg"
+	}
+
+	mkTempDir := w.mkTempDir
+	if mkTempDir == nil {
+		mkTempDir = os.MkdirTemp
+	}
+
+	tempDir, err := mkTempDir("", "ytd-video-cut-"+payload.JobID+"-")
+	if err != nil {
+		return "", 0, nil, fmt.Errorf("create temp dir: %w", err)
+	}
+
+	cleanup := func() {
+		_ = os.RemoveAll(tempDir)
+	}
+
+	sourceTemplate := filepath.Join(tempDir, payload.JobID+"-source.%(ext)s")
+	downloadArgs := []string{
+		"--ignore-config",
+		"--no-playlist",
+		"--no-warnings",
+		"--format", payload.FormatID,
+		"--merge-output-format", "mp4",
+		"--output", sourceTemplate,
+	}
+	if w.cfg.YTDLPJSRuntimes != "" {
+		downloadArgs = append(downloadArgs, "--js-runtimes", w.cfg.YTDLPJSRuntimes)
+	}
+	for key, value := range payload.Headers {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		downloadArgs = append(downloadArgs, "--add-header", fmt.Sprintf("%s: %s", key, value))
+	}
+	if payload.UserAgent != "" {
+		downloadArgs = append(downloadArgs, "--user-agent", payload.UserAgent)
+	}
+	downloadArgs = append(downloadArgs, payload.SourceURL)
+
+	downloadCmd := exec.CommandContext(ctx, w.cfg.YTDLPBinary, downloadArgs...)
+	var downloadStderr bytes.Buffer
+	downloadCmd.Stderr = &downloadStderr
+	if err := downloadCmd.Run(); err != nil {
+		errText := strings.TrimSpace(downloadStderr.String())
+		if errText == "" {
+			errText = err.Error()
+		}
+		cleanup()
+		return "", 0, nil, fmt.Errorf("yt-dlp download failed: %s", errText)
+	}
+
+	sourcePath := filepath.Join(tempDir, payload.JobID+"-source.mp4")
+	if _, err := os.Stat(sourcePath); err != nil {
+		matches, globErr := filepath.Glob(filepath.Join(tempDir, payload.JobID+"-source.*"))
+		if globErr != nil || len(matches) == 0 {
+			cleanup()
+			return "", 0, nil, errors.New("source video output not found after download")
+		}
+		sourcePath = matches[0]
+	}
+
+	outputPath := filepath.Join(tempDir, payload.JobID+"-cut.mp4")
+	trimArgs := []string{
+		"-y",
+		"-ss", fmt.Sprintf("%d", payload.ManualStartSec),
+		"-to", fmt.Sprintf("%d", payload.ManualEndSec),
+		"-i", sourcePath,
+		"-map", "0:v:0",
+		"-map", "0:a:0?",
+		"-c:v", "libx264",
+		"-preset", "veryfast",
+		"-crf", "23",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-movflags", "+faststart",
+		outputPath,
+	}
+
+	trimCmd := exec.CommandContext(ctx, ffmpegBinary, trimArgs...)
+	var trimStderr bytes.Buffer
+	trimCmd.Stderr = &trimStderr
+	if err := trimCmd.Run(); err != nil {
+		errText := strings.TrimSpace(trimStderr.String())
+		if errText == "" {
+			errText = err.Error()
+		}
+		cleanup()
+		return "", 0, nil, fmt.Errorf("ffmpeg cut failed: %s", errText)
+	}
+
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		cleanup()
+		return "", 0, nil, errors.New("cut output file not found")
+	}
+	if info.Size() <= 0 {
+		cleanup()
+		return "", 0, nil, errors.New("cut output file is empty")
+	}
+
+	return outputPath, info.Size(), cleanup, nil
+}
+
 func (w *Worker) markHistoryAttemptProcessing(jobID string) {
 	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
 		return
@@ -278,7 +500,7 @@ func (w *Worker) markHistoryAttemptProcessing(jobID string) {
 	}
 }
 
-func (w *Worker) markHistoryAttemptDone(jobID, outputKey, downloadURL string, expiresAt time.Time) {
+func (w *Worker) markHistoryAttemptDone(jobID, outputKey, downloadURL string, expiresAt time.Time, sizeBytes *int64) {
 	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
 		return
 	}
@@ -300,6 +522,7 @@ func (w *Worker) markHistoryAttemptDone(jobID, outputKey, downloadURL string, ex
 		a.Status = history.StatusDone
 		a.OutputKey = strings.TrimSpace(outputKey)
 		a.DownloadURL = strings.TrimSpace(downloadURL)
+		a.SizeBytes = sizeBytes
 		if expiresAt.IsZero() {
 			a.ExpiresAt = nil
 		} else {
@@ -320,7 +543,7 @@ func (w *Worker) markHistoryAttemptDone(jobID, outputKey, downloadURL string, ex
 	}
 }
 
-func (w *Worker) markHistoryAttemptFailed(jobID string, rootErr error) {
+func (w *Worker) markHistoryAttemptFailed(jobID string, errorCode string, rootErr error) {
 	if w == nil || w.historyStore == nil || strings.TrimSpace(jobID) == "" {
 		return
 	}
@@ -338,9 +561,13 @@ func (w *Worker) markHistoryAttemptFailed(jobID string, rootErr error) {
 	}
 
 	now := time.Now().UTC()
+	code := strings.TrimSpace(errorCode)
+	if code == "" {
+		code = "job_processing_failed"
+	}
 	_, err = w.historyStore.UpdateAttempt(ctx, attempt.UserID, attempt.ID, func(a *history.Attempt) {
 		a.Status = history.StatusFailed
-		a.ErrorCode = "mp3_conversion_failed"
+		a.ErrorCode = code
 		a.ErrorText = clipError(rootErr)
 		a.CompletedAt = &now
 	})

@@ -26,6 +26,10 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("TT_RESOLVE_TRY_WITHOUT_COOKIES", "")
 	t.Setenv("MP3_BITRATE", "")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "")
+	t.Setenv("VIDEO_CUT_OUTPUT_TTL_MINUTES", "")
+	t.Setenv("VIDEO_CUT_MAX_DURATION_SEC", "")
+	t.Setenv("VIDEO_CUT_FFMPEG_BINARY", "")
+	t.Setenv("YTD_HEATMAP_TRIM_ENABLED", "")
 	t.Setenv("JOB_RETENTION_DAYS", "")
 	t.Setenv("REDIS_ADDR", "")
 	t.Setenv("REDIS_PASSWORD", "")
@@ -83,6 +87,18 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.TTResolveTryWithoutCookies != true {
 		t.Fatalf("unexpected default TTResolveTryWithoutCookies: %v", cfg.TTResolveTryWithoutCookies)
+	}
+	if cfg.VideoCutOutputTTLMinutes != 60 {
+		t.Fatalf("unexpected default VIDEO_CUT_OUTPUT_TTL_MINUTES: %d", cfg.VideoCutOutputTTLMinutes)
+	}
+	if cfg.VideoCutMaxDurationSec != 180 {
+		t.Fatalf("unexpected default VIDEO_CUT_MAX_DURATION_SEC: %d", cfg.VideoCutMaxDurationSec)
+	}
+	if cfg.VideoCutFFmpegBinary != "ffmpeg" {
+		t.Fatalf("unexpected default VIDEO_CUT_FFMPEG_BINARY: %s", cfg.VideoCutFFmpegBinary)
+	}
+	if !cfg.HeatmapTrimEnabled {
+		t.Fatalf("expected default YTD_HEATMAP_TRIM_ENABLED=true")
 	}
 	if cfg.RedisAddr != "127.0.0.1:6379" {
 		t.Fatalf("unexpected default RedisAddr: %s", cfg.RedisAddr)
@@ -158,6 +174,10 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	t.Setenv("TT_RESOLVE_TRY_WITHOUT_COOKIES", "false")
 	t.Setenv("MP3_BITRATE", "256")
 	t.Setenv("MP3_OUTPUT_TTL_MINUTES", "120")
+	t.Setenv("VIDEO_CUT_OUTPUT_TTL_MINUTES", "90")
+	t.Setenv("VIDEO_CUT_MAX_DURATION_SEC", "210")
+	t.Setenv("VIDEO_CUT_FFMPEG_BINARY", "/usr/local/bin/ffmpeg-video-cut")
+	t.Setenv("YTD_HEATMAP_TRIM_ENABLED", "false")
 	t.Setenv("JOB_RETENTION_DAYS", "30")
 	t.Setenv("REDIS_ADDR", "127.0.0.1:6382")
 	t.Setenv("POSTGRES_DSN", "postgres://postgres:pass@127.0.0.1:5435/ytd?sslmode=disable")
@@ -235,6 +255,18 @@ func TestLoad_OverridesAndInvalidFallback(t *testing.T) {
 	}
 	if cfg.MP3Bitrate != 256 || cfg.MP3OutputTTLMinutes != 120 || cfg.JobRetentionDays != 30 {
 		t.Fatalf("unexpected MP3/job retention overrides: bitrate=%d ttl=%d retention=%d", cfg.MP3Bitrate, cfg.MP3OutputTTLMinutes, cfg.JobRetentionDays)
+	}
+	if cfg.VideoCutOutputTTLMinutes != 90 {
+		t.Fatalf("unexpected VIDEO_CUT_OUTPUT_TTL_MINUTES override: %d", cfg.VideoCutOutputTTLMinutes)
+	}
+	if cfg.VideoCutMaxDurationSec != 210 {
+		t.Fatalf("unexpected VIDEO_CUT_MAX_DURATION_SEC override: %d", cfg.VideoCutMaxDurationSec)
+	}
+	if cfg.VideoCutFFmpegBinary != "/usr/local/bin/ffmpeg-video-cut" {
+		t.Fatalf("unexpected VIDEO_CUT_FFMPEG_BINARY override: %s", cfg.VideoCutFFmpegBinary)
+	}
+	if cfg.HeatmapTrimEnabled {
+		t.Fatalf("unexpected YTD_HEATMAP_TRIM_ENABLED override: %v", cfg.HeatmapTrimEnabled)
 	}
 	if cfg.RedisAddr != "127.0.0.1:6382" {
 		t.Fatalf("unexpected REDIS_ADDR override: %s", cfg.RedisAddr)

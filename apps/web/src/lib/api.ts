@@ -54,6 +54,27 @@ export interface CreateMp3JobResponse {
   status: string;
 }
 
+export type VideoCutMode = "manual" | "heatmap";
+
+export interface CreateVideoCutJobRequest {
+  url: string;
+  formatId: string;
+  cutMode: VideoCutMode;
+  manual?: {
+    startSec: number;
+    endSec: number;
+  };
+  heatmap?: {
+    targetSec?: number;
+    windowSec?: number;
+  };
+}
+
+export interface CreateVideoCutJobResponse {
+  job_id: string;
+  status: string;
+}
+
 export interface JobStatusResponse {
   id: string;
   status: string;
@@ -361,6 +382,36 @@ export const api = {
     fetcher<CreateMp3JobResponse>("/v1/jobs/mp3", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+
+  createVideoCutJob: (payload: CreateVideoCutJobRequest) =>
+    fetcher<CreateVideoCutJobResponse>("/v1/jobs/video-cut", {
+      method: "POST",
+      body: JSON.stringify({
+        url: payload.url,
+        format_id: payload.formatId,
+        cut_mode: payload.cutMode,
+        ...(payload.manual
+          ? {
+              manual: {
+                start_sec: payload.manual.startSec,
+                end_sec: payload.manual.endSec,
+              },
+            }
+          : {}),
+        ...(payload.heatmap
+          ? {
+              heatmap: {
+                ...(typeof payload.heatmap.targetSec === "number"
+                  ? { target_sec: payload.heatmap.targetSec }
+                  : {}),
+                ...(typeof payload.heatmap.windowSec === "number"
+                  ? { window_sec: payload.heatmap.windowSec }
+                  : {}),
+              },
+            }
+          : {}),
+      }),
     }),
 
   getJobStatus: (jobId: string) =>

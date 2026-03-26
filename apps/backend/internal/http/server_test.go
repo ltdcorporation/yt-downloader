@@ -168,12 +168,15 @@ func (f *fakeJobStore) ListRecent(_ context.Context, limit int) ([]jobs.Record, 
 
 func baseTestConfig() config.Config {
 	return config.Config{
-		RateLimitRPS:       0,
-		MP3Bitrate:         192,
-		R2KeyPrefix:        "yt-downloader/prod",
-		AdminBasicAuthUser: "admin",
-		AdminBasicAuthPass: "secret",
-		CORSAllowedOrigins: "http://allowed.local",
+		RateLimitRPS:             0,
+		MP3Bitrate:               192,
+		R2KeyPrefix:              "yt-downloader/prod",
+		VideoCutMaxDurationSec:   180,
+		VideoCutOutputTTLMinutes: 60,
+		HeatmapTrimEnabled:       true,
+		AdminBasicAuthUser:       "admin",
+		AdminBasicAuthPass:       "secret",
+		CORSAllowedOrigins:       "http://allowed.local",
 	}
 }
 

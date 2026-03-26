@@ -64,9 +64,14 @@ func run(cfg config.Config, logger *log.Logger) error {
 	cfg.YTDLPBinary = resolvedYTDLPBinary
 	logger.Printf("yt-dlp binary resolved: %s", cfg.YTDLPBinary)
 
-	if ffmpegBinary, err := workerLookPath("ffmpeg"); err != nil {
-		logger.Printf("warning: ffmpeg binary not found in PATH, MP3 conversion may fail: %v", err)
+	ffmpegLookup := cfg.VideoCutFFmpegBinary
+	if ffmpegLookup == "" {
+		ffmpegLookup = "ffmpeg"
+	}
+	if ffmpegBinary, err := workerLookPath(ffmpegLookup); err != nil {
+		logger.Printf("warning: ffmpeg binary not found (VIDEO_CUT_FFMPEG_BINARY=%q), video-cut jobs may fail: %v", ffmpegLookup, err)
 	} else {
+		cfg.VideoCutFFmpegBinary = ffmpegBinary
 		logger.Printf("ffmpeg binary resolved: %s", ffmpegBinary)
 	}
 
