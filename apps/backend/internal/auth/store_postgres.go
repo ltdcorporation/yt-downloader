@@ -40,12 +40,15 @@ func (p *postgresBackend) CreateUser(ctx context.Context, user User) error {
 
 	_, err := p.db.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		user.ID,
 		user.FullName,
 		user.Email,
 		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
+		user.Role,
+		user.Plan,
+		user.PlanExpiresAt,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
@@ -74,12 +77,15 @@ func (p *postgresBackend) CreateUserAndSession(ctx context.Context, user User, s
 
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		user.ID,
 		user.FullName,
 		user.Email,
 		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
+		user.Role,
+		user.Plan,
+		user.PlanExpiresAt,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
@@ -133,12 +139,15 @@ func (p *postgresBackend) CreateUserSessionAndGoogleIdentity(ctx context.Context
 
 	_, err = tx.ExecContext(
 		ctx,
-		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		`INSERT INTO auth_users (id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		user.ID,
 		user.FullName,
 		user.Email,
 		nullIfEmpty(user.AvatarURL),
 		user.PasswordHash,
+		user.Role,
+		user.Plan,
+		user.PlanExpiresAt,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
@@ -203,7 +212,7 @@ func (p *postgresBackend) GetUserByEmail(ctx context.Context, email string) (Use
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE email = $1`,
+		`SELECT id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at FROM auth_users WHERE email = $1`,
 		email,
 	)
 
@@ -225,7 +234,7 @@ func (p *postgresBackend) GetUserByID(ctx context.Context, userID string) (User,
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT id, full_name, email, avatar_url, password_hash, created_at, updated_at FROM auth_users WHERE id = $1`,
+		`SELECT id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at FROM auth_users WHERE id = $1`,
 		userID,
 	)
 
@@ -251,7 +260,7 @@ func (p *postgresBackend) UpdateUserFullName(ctx context.Context, userID, fullNa
 		 SET full_name = $2,
 		     updated_at = $3
 		 WHERE id = $1
-		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`,
+		 RETURNING id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at`,
 		userID,
 		fullName,
 		updatedAt.UTC(),
@@ -279,7 +288,7 @@ func (p *postgresBackend) UpdateUserAvatarURL(ctx context.Context, userID, avata
 		 SET avatar_url = $2,
 		     updated_at = $3
 		 WHERE id = $1
-		 RETURNING id, full_name, email, avatar_url, password_hash, created_at, updated_at`,
+		 RETURNING id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at`,
 		userID,
 		nullIfEmpty(avatarURL),
 		updatedAt.UTC(),
@@ -303,7 +312,7 @@ func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubj
 
 	row := p.db.QueryRowContext(
 		ctx,
-		`SELECT u.id, u.full_name, u.email, u.avatar_url, u.password_hash, u.created_at, u.updated_at
+		`SELECT u.id, u.full_name, u.email, u.avatar_url, u.password_hash, u.role, u.plan, u.plan_expires_at, u.created_at, u.updated_at
 		 FROM auth_google_identities gi
 		 JOIN auth_users u ON u.id = gi.user_id
 		 WHERE gi.google_subject = $1`,
@@ -319,9 +328,53 @@ func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubj
 	}
 
 	return user, nil
-}
+	}
 
-func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
+	func (p *postgresBackend) ListUsers(ctx context.Context, limit, offset int) ([]User, int, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return nil, 0, err
+	}
+
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int
+	err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users`).Scan(&total)
+	if err != nil {
+		return nil, 0, fmt.Errorf("count auth users: %w", err)
+	}
+
+	rows, err := p.db.QueryContext(
+		ctx,
+		`SELECT id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at
+		 FROM auth_users
+		 ORDER BY created_at DESC
+		 LIMIT $1 OFFSET $2`,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list auth users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		user, err := scanUserRow(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan auth user: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	return users, total, nil
+	}
+
+	func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
 	if err := p.ensureSchema(ctx); err != nil {
 		return err
 	}
@@ -497,12 +550,18 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 			email TEXT NOT NULL UNIQUE,
 			avatar_url TEXT,
 			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'user',
+			plan TEXT NOT NULL DEFAULT 'free',
+			plan_expires_at TIMESTAMPTZ,
 			created_at TIMESTAMPTZ NOT NULL,
 			updated_at TIMESTAMPTZ NOT NULL
 		)
 		`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users (email)`,
 		`ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
+		`ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`,
+		`ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free'`,
+		`ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ`,
 		`
 		CREATE TABLE IF NOT EXISTS auth_sessions (
 			id TEXT PRIMARY KEY,
@@ -559,18 +618,26 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 func scanUserRow(row interface{ Scan(dest ...any) error }) (User, error) {
 	var user User
 	var avatarURL sql.NullString
+	var planExpiresAt sql.NullTime
 	if err := row.Scan(
 		&user.ID,
 		&user.FullName,
 		&user.Email,
 		&avatarURL,
 		&user.PasswordHash,
+		&user.Role,
+		&user.Plan,
+		&planExpiresAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	); err != nil {
 		return User{}, err
 	}
 	user.AvatarURL = strings.TrimSpace(avatarURL.String)
+	if planExpiresAt.Valid {
+		t := planExpiresAt.Time.UTC()
+		user.PlanExpiresAt = &t
+	}
 	return user, nil
 }
 

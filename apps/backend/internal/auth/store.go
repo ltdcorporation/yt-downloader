@@ -24,14 +24,33 @@ var (
 	ErrGoogleIdentityConflict = errors.New("google account is linked to a different user")
 )
 
+type Role string
+
+const (
+	RoleAdmin Role = "admin"
+	RoleUser  Role = "user"
+)
+
+type Plan string
+
+const (
+	PlanFree    Plan = "free"
+	PlanDaily   Plan = "daily"
+	PlanWeekly  Plan = "weekly"
+	PlanMonthly Plan = "monthly"
+)
+
 type User struct {
-	ID           string
-	FullName     string
-	Email        string
-	AvatarURL    string
-	PasswordHash string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            string
+	FullName      string
+	Email         string
+	AvatarURL     string
+	PasswordHash  string
+	Role          Role
+	Plan          Plan
+	PlanExpiresAt *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type Session struct {
@@ -67,6 +86,7 @@ type backend interface {
 	UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	UpdateUserAvatarURL(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error)
 	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
+	ListUsers(ctx context.Context, limit int, offset int) ([]User, int, error)
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	TouchSession(ctx context.Context, tokenHash string, touchedAt time.Time) error
@@ -180,6 +200,13 @@ func (s *Store) GetUserByGoogleSubject(ctx context.Context, googleSubject string
 		return User{}, errors.New("auth store is not initialized")
 	}
 	return s.backend.GetUserByGoogleSubject(ctx, strings.TrimSpace(googleSubject))
+}
+
+func (s *Store) ListUsers(ctx context.Context, limit int, offset int) ([]User, int, error) {
+	if s == nil || s.backend == nil {
+		return nil, 0, errors.New("auth store is not initialized")
+	}
+	return s.backend.ListUsers(ctx, limit, offset)
 }
 
 func (s *Store) CreateSession(ctx context.Context, session Session) error {

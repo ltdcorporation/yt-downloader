@@ -143,11 +143,17 @@ export interface HistoryRedownloadResponse {
   status?: string;
 }
 
+export type UserRole = "admin" | "user";
+export type UserPlan = "free" | "daily" | "weekly" | "monthly";
+
 export interface AuthUser {
   id: string;
   full_name: string;
   email: string;
   avatar_url?: string;
+  role: UserRole;
+  plan: UserPlan;
+  plan_expires_at?: string;
   created_at: string;
 }
 
@@ -494,4 +500,13 @@ export const api = {
 
   getMp4DownloadUrl: (url: string, formatId: string) =>
     `${API_BASE_URL}/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`,
+
+  listAdminUsers: (limit = 20, offset = 0) =>
+    fetcher<{
+      items: AuthUser[];
+      page: { total: number; limit: number; offset: number };
+    }>(`/v1/admin/users?limit=${limit}&offset=${offset}`),
+
+  adminJobs: (limit = 30) =>
+    fetcher<{ items: any[] }>(`/admin/jobs?limit=${limit}`),
 };

@@ -51,11 +51,14 @@ func (e *ValidationError) Error() string {
 }
 
 type PublicUser struct {
-	ID        string    `json:"id"`
-	FullName  string    `json:"full_name"`
-	Email     string    `json:"email"`
-	AvatarURL string    `json:"avatar_url,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            string     `json:"id"`
+	FullName      string     `json:"full_name"`
+	Email         string     `json:"email"`
+	AvatarURL     string     `json:"avatar_url,omitempty"`
+	Role          Role       `json:"role"`
+	Plan          Plan       `json:"plan"`
+	PlanExpiresAt *time.Time `json:"plan_expires_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type AuthResult struct {
@@ -143,6 +146,14 @@ func NewService(store *Store, opts Options) *Service {
 }
 
 func (s *Service) Register(ctx context.Context, input RegisterInput) (AuthResult, error) {
+	return s.registerWithRole(ctx, input, RoleUser)
+}
+
+func (s *Service) RegisterAdmin(ctx context.Context, input RegisterInput) (AuthResult, error) {
+	return s.registerWithRole(ctx, input, RoleAdmin)
+}
+
+func (s *Service) registerWithRole(ctx context.Context, input RegisterInput, role Role) (AuthResult, error) {
 	if s == nil || s.store == nil {
 		return AuthResult{}, errors.New("auth service is not initialized")
 	}
@@ -173,6 +184,8 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (AuthResult
 		FullName:     fullName,
 		Email:        email,
 		PasswordHash: string(hashBytes),
+		Role:         role,
+		Plan:         PlanFree,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -190,6 +203,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) (AuthResult
 
 	return buildAuthResult(user, token, session.ExpiresAt), nil
 }
+
 
 func (s *Service) Login(ctx context.Context, input LoginInput) (AuthResult, error) {
 	if s == nil || s.store == nil {
@@ -298,6 +312,8 @@ func (s *Service) LoginWithGoogle(ctx context.Context, input GoogleLoginInput) (
 		FullName:     fullName,
 		Email:        email,
 		PasswordHash: passwordHash,
+		Role:         RoleUser,
+		Plan:         PlanFree,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -375,11 +391,14 @@ func (s *Service) AuthenticateToken(ctx context.Context, rawToken string) (Sessi
 
 	return SessionIdentity{
 		User: PublicUser{
-			ID:        user.ID,
-			FullName:  user.FullName,
-			Email:     user.Email,
-			AvatarURL: user.AvatarURL,
-			CreatedAt: user.CreatedAt,
+			ID:            user.ID,
+			FullName:      user.FullName,
+			Email:         user.Email,
+			AvatarURL:     user.AvatarURL,
+			Role:          user.Role,
+			Plan:          user.Plan,
+			PlanExpiresAt: user.PlanExpiresAt,
+			CreatedAt:     user.CreatedAt,
 		},
 		SessionID: session.ID,
 		ExpiresAt: session.ExpiresAt,
@@ -425,11 +444,14 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, input Update
 	}
 
 	return PublicUser{
-		ID:        user.ID,
-		FullName:  user.FullName,
-		Email:     user.Email,
-		AvatarURL: user.AvatarURL,
-		CreatedAt: user.CreatedAt,
+		ID:            user.ID,
+		FullName:      user.FullName,
+		Email:         user.Email,
+		AvatarURL:     user.AvatarURL,
+		Role:          user.Role,
+		Plan:          user.Plan,
+		PlanExpiresAt: user.PlanExpiresAt,
+		CreatedAt:     user.CreatedAt,
 	}, nil
 }
 
@@ -449,12 +471,42 @@ func (s *Service) UpdateAvatarURL(ctx context.Context, userID, avatarURL string)
 	}
 
 	return PublicUser{
-		ID:        user.ID,
-		FullName:  user.FullName,
-		Email:     user.Email,
-		AvatarURL: user.AvatarURL,
-		CreatedAt: user.CreatedAt,
+		ID:            user.ID,
+		FullName:      user.FullName,
+		Email:         user.Email,
+		AvatarURL:     user.AvatarURL,
+		Role:          user.Role,
+		Plan:          user.Plan,
+		PlanExpiresAt: user.PlanExpiresAt,
+		CreatedAt:     user.CreatedAt,
 	}, nil
+}
+
+func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]PublicUser, int, error) {
+	if s == nil || s.store == nil {
+		return nil, 0, errors.New("auth service is not initialized")
+	}
+
+	users, total, err := s.store.ListUsers(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	publicUsers := make([]PublicUser, 0, len(users))
+	for _, user := range users {
+		publicUsers = append(publicUsers, PublicUser{
+			ID:            user.ID,
+			FullName:      user.FullName,
+			Email:         user.Email,
+			AvatarURL:     user.AvatarURL,
+			Role:          user.Role,
+			Plan:          user.Plan,
+			PlanExpiresAt: user.PlanExpiresAt,
+			CreatedAt:     user.CreatedAt,
+		})
+	}
+
+	return publicUsers, total, nil
 }
 
 func (s *Service) issueSessionForUser(ctx context.Context, user User, keepLoggedIn bool, clientIP, userAgent string) (AuthResult, error) {
@@ -514,11 +566,14 @@ func (s *Service) generateUnusablePasswordHash() (string, error) {
 func buildAuthResult(user User, token string, expiresAt time.Time) AuthResult {
 	return AuthResult{
 		User: PublicUser{
-			ID:        user.ID,
-			FullName:  user.FullName,
-			Email:     user.Email,
-			AvatarURL: user.AvatarURL,
-			CreatedAt: user.CreatedAt,
+			ID:            user.ID,
+			FullName:      user.FullName,
+			Email:         user.Email,
+			AvatarURL:     user.AvatarURL,
+			Role:          user.Role,
+			Plan:          user.Plan,
+			PlanExpiresAt: user.PlanExpiresAt,
+			CreatedAt:     user.CreatedAt,
 		},
 		AccessToken: token,
 		TokenType:   "Bearer",

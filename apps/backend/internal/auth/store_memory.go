@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 )
@@ -157,6 +158,40 @@ func (m *memoryBackend) GetUserByGoogleSubject(_ context.Context, googleSubject 
 	}
 
 	return user, nil
+}
+
+func (m *memoryBackend) ListUsers(_ context.Context, limit, offset int) ([]User, int, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	allUsers := make([]User, 0, len(m.usersByID))
+	for _, user := range m.usersByID {
+		allUsers = append(allUsers, user)
+	}
+
+	// Sort by CreatedAt DESC
+	sort.Slice(allUsers, func(i, j int) bool {
+		return allUsers[i].CreatedAt.After(allUsers[j].CreatedAt)
+	})
+
+	total := len(allUsers)
+	start := offset
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	return allUsers[start:end], total, nil
 }
 
 func (m *memoryBackend) CreateSession(_ context.Context, session Session) error {

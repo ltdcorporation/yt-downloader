@@ -263,7 +263,8 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/jobs/video-cut", s.handleCreateVideoCutJob)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
-	r.With(s.basicAuth).Get("/admin/jobs", s.handleAdminJobs)
+	r.With(s.requireSessionIdentity, s.requireAdmin).Get("/admin/jobs", s.handleAdminJobs)
+	r.With(s.requireSessionIdentity, s.requireAdmin).Get("/v1/admin/users", s.handleAdminUsersList)
 
 	return r
 }
@@ -712,6 +713,40 @@ func (s *Server) detectPlatform(rawURL string) string {
 	return "unknown"
 }
 
+func (s *Server) handleAdminUsersList(w http.ResponseWriter, r *http.Request) {
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	users, total, err := s.authService.ListUsers(r.Context(), limit, offset)
+	if err != nil {
+		s.logger.Printf("failed to list admin users err=%v", err)
+		writeError(w, http.StatusInternalServerError, "failed to fetch users")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": users,
+		"page": map[string]any{
+			"total":  total,
+			"limit":  limit,
+			"offset": offset,
+		},
+	})
+}
+
 func (s *Server) handleAdminJobs(w http.ResponseWriter, r *http.Request) {
 	limit := 30
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
@@ -744,6 +779,47 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+func (s *Server) requireSessionIdentity(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := ""
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			token = strings.TrimPrefix(authHeader, "Bearer ")
+		} else {
+			cookie, err := r.Cookie("session_token")
+			if err == nil {
+				token = cookie.Value
+			}
+		}
+
+		if token == "" {
+			writeErrorWithCode(w, http.StatusUnauthorized, "invalid_session", "unauthorized")
+			return
+		}
+
+		identity, err := s.authService.AuthenticateToken(r.Context(), token)
+		if err != nil {
+			writeErrorWithCode(w, http.StatusUnauthorized, "invalid_session", "unauthorized")
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "identity", identity)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity, ok := r.Context().Value("identity").(auth.SessionIdentity)
+		if !ok || identity.User.Role != auth.RoleAdmin {
+			writeError(w, http.StatusForbidden, "forbidden: admin role required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
