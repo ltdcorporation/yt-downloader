@@ -263,8 +263,18 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/v1/jobs/video-cut", s.handleCreateVideoCutJob)
 	r.Get("/v1/jobs/{id}", s.handleGetJob)
 	r.Get("/v1/download/mp4", s.handleRedirectMP4)
-	r.With(s.adminAuth).Get("/admin/jobs", s.handleAdminJobs)
-	r.With(s.adminAuth).Get("/v1/admin/users", s.handleAdminUsersList)
+
+	// Admin routes
+	r.Route("/admin", func(r chi.Router) {
+		r.Use(s.adminAuth)
+		r.Get("/jobs", s.handleAdminJobs)
+		r.Get("/users", s.handleAdminUsersList)
+	})
+
+	r.Route("/v1/admin", func(r chi.Router) {
+		r.Use(s.adminAuth)
+		r.Get("/users", s.handleAdminUsersList)
+	})
 
 	return r
 }
