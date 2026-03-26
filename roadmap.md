@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-26 (Backend roadmap refresh: YouTube heatmap + video-cut enterprise plan)_
+_Last update: 2026-03-26 (YouTube heatmap contract+backend domain phase-1 delivered)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -227,7 +227,7 @@ _Last update: 2026-03-26 (Backend roadmap refresh: YouTube heatmap + video-cut e
   - [x] `TT_RESOLVE_TRY_WITHOUT_COOKIES`
 - [x] Error code typed untuk TikTok HLS-only sudah ada: `tt_hls_only_not_supported`
 - [x] UI trim + heatmap untuk YouTube sudah tersedia di modal frontend (`DownloadModal`)
-- [ ] Contract backend YouTube untuk `heatmap` + `key_moments` belum diekspos
+- [x] Contract backend YouTube untuk `heatmap` + `key_moments` sudah diekspos di `POST /v1/youtube/resolve`
 - [ ] Endpoint queue video cut (`POST /v1/jobs/video-cut`) belum tersedia
 - [ ] Worker ffmpeg untuk proses cut + upload hasil ke R2 belum tersedia
 - [ ] Feature flag + observability khusus heatmap/video-cut belum tersedia
@@ -361,20 +361,20 @@ _Last update: 2026-03-26 (Backend roadmap refresh: YouTube heatmap + video-cut e
   - [ ] object-level lifecycle policies untuk stale orphan edge-case
   - [ ] image safety scanning hook
 
-### J. Milestone BE-9 — YouTube Heatmap + Video-Cut Enterprise (Planned)
+### J. Milestone BE-9 — YouTube Heatmap + Video-Cut Enterprise (In Progress)
 
 **Target:** mode Manual Trim + Heatmap Cut di UI YouTube benar-benar aktif end-to-end (backend + worker), aman, dan tidak merusak flow download existing.
 
 - [ ] Freeze API contract (backward-compatible):
-  - [ ] `POST /v1/youtube/resolve` return `heatmap`, `key_moments`, `heatmap_meta`
+  - [x] `POST /v1/youtube/resolve` return `heatmap`, `key_moments`, `heatmap_meta`
   - [ ] Tambah endpoint `POST /v1/jobs/video-cut` untuk mode `manual` + `heatmap`
   - [ ] Polling status tetap reuse `GET /v1/jobs/:id` (tanpa pecah kontrak job)
-- [ ] Bangun domain `internal/heatmap`:
-  - [ ] Parser + normalisasi bins heatmap dari payload yt-dlp
-  - [ ] Smoothing + adaptive threshold + min-distance peak detection
-  - [ ] Anti-intro bias supaya peak awal video tidak selalu auto-terpilih
+- [x] Bangun domain `internal/heatmap`:
+  - [x] Parser + normalisasi bins heatmap dari payload yt-dlp
+  - [x] Smoothing + adaptive threshold + min-distance peak detection
+  - [x] Anti-intro bias supaya peak awal video tidak selalu auto-terpilih
 - [ ] Validation & security hardening:
-  - [ ] Validasi YouTube URL + `format_id` harus valid dari hasil resolve
+  - [x] Validasi YouTube URL + `format_id` harus valid dari hasil resolve
   - [ ] Validasi trim range (`start < end`, batas durasi cut, batas output size)
   - [ ] Typed error code (`heatmap_not_available`, `invalid_trim_range`, `video_cut_failed`, dst)
 - [ ] Queue + worker video-cut pipeline:
@@ -385,9 +385,9 @@ _Last update: 2026-03-26 (Backend roadmap refresh: YouTube heatmap + video-cut e
   - [ ] Feature flag `YTD_HEATMAP_TRIM_ENABLED` + rollback instan
   - [ ] Structured log + metrics (`video_cut_job_total`, `heatmap_available_total`, error code rate)
 - [ ] Testing gate enterprise:
-  - [ ] Unit test `internal/heatmap` + validation path
+  - [x] Unit test `internal/heatmap` + validation path
   - [ ] Handler + integration test queue->worker->R2
-  - [ ] Regression test flow existing (`/v1/download/mp4` no-trim dan job MP3) tetap aman
+  - [x] Regression test flow existing (`/v1/download/mp4` no-trim dan job MP3) tetap aman
 
 - [ ] Next hardening (belum):
   - [ ] Signed resolve snapshot/token untuk cegah tampering parameter trim
@@ -404,7 +404,7 @@ _Last update: 2026-03-26 (Backend roadmap refresh: YouTube heatmap + video-cut e
 - [x] History enterprise baseline aktif (write/read/redownload/delete + resolve-capture endpoint)
 - [x] Settings/Profile enterprise baseline aktif (owner-scoped endpoint + versioned patch + audit trail)
 - [x] Avatar enterprise baseline aktif (schema + endpoint + strict delete/rollback semantics)
-- [ ] API contract heatmap YouTube (`heatmap` + `key_moments`) live dan tervalidasi
+- [x] API contract heatmap YouTube (`heatmap` + `key_moments`) live dan tervalidasi
 - [ ] Endpoint/job `video-cut` (manual + heatmap) lulus E2E staging
 - [ ] Feature flag heatmap/video-cut + rollback path tervalidasi
 - [ ] Metrics observability heatmap/video-cut tersedia

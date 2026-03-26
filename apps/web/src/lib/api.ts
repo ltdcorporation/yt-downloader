@@ -15,11 +15,26 @@ export interface ResolveFormat {
   filesize?: number;
 }
 
+export interface ResolveHeatmapPoint {
+  start_time: number;
+  end_time: number;
+  value: number;
+}
+
+export interface ResolveHeatmapMeta {
+  available: boolean;
+  bins: number;
+  algorithm_version: string;
+}
+
 export interface ResolveResponse {
   title: string;
   thumbnail: string;
   duration_seconds: number;
   formats: ResolveFormat[];
+  heatmap?: ResolveHeatmapPoint[];
+  key_moments?: number[];
+  heatmap_meta?: ResolveHeatmapMeta;
   medias?: {
     id: string;
     type: "video" | "image";

@@ -124,6 +124,7 @@ GET  /admin/jobs            (basic auth)
 
 ## Notes
 
+- YouTube resolve response now includes optional heatmap intelligence payload (`heatmap`, `key_moments`, `heatmap_meta`) for trim/cut orchestration.
 - MP4 redirects now require `url` + `format_id` (no raw target redirect).
 - MP3 job lifecycle is stored in PostgreSQL (falls back to Redis only when `POSTGRES_DSN` is empty).
 - `/admin` (web) and `/admin/jobs` (API) both use basic auth (`ADMIN_BASIC_AUTH_USER/PASS`).

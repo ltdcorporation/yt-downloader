@@ -11,13 +11,13 @@ import (
 )
 
 type fakeYTDLPScriptOptions struct {
-	Stdout           string
-	Stderr           string
-	ExitCode         int
-	ExpectedJS       string
-	ExpectedHeader   string
+	Stdout            string
+	Stderr            string
+	ExitCode          int
+	ExpectedJS        string
+	ExpectedHeader    string
 	ExpectedUserAgent string
-	ExpectedURL      string
+	ExpectedURL       string
 }
 
 func makeFakeYTDLPScript(t *testing.T, opts fakeYTDLPScriptOptions) string {
@@ -135,6 +135,10 @@ func progressiveFormat(id string, height int, url string, filesize int64, filesi
 		Filesize:       filesize,
 		FilesizeApprox: filesizeApprox,
 	}
+}
+
+func heatmapBin(start float64, end float64, value float64) ytdlpHeatmapPoint {
+	return ytdlpHeatmapPoint{StartTime: start, EndTime: end, Value: value}
 }
 
 func TestNewResolver_DefaultsAndTrim(t *testing.T) {
@@ -310,32 +314,32 @@ func TestIsProgressiveMP4(t *testing.T) {
 	}{
 		{
 			name: "valid progressive mp4",
-			in: ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "mp4a"},
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "mp4a"},
 			want: true,
 		},
 		{
 			name: "non-mp4 extension",
-			in: ytdlpFormat{Ext: "webm", VideoCodec: "vp9", AudioCodec: "opus"},
+			in:   ytdlpFormat{Ext: "webm", VideoCodec: "vp9", AudioCodec: "opus"},
 			want: false,
 		},
 		{
 			name: "missing video codec",
-			in: ytdlpFormat{Ext: "mp4", VideoCodec: "", AudioCodec: "mp4a"},
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "", AudioCodec: "mp4a"},
 			want: false,
 		},
 		{
 			name: "video codec none",
-			in: ytdlpFormat{Ext: "mp4", VideoCodec: "none", AudioCodec: "mp4a"},
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "none", AudioCodec: "mp4a"},
 			want: false,
 		},
 		{
 			name: "missing audio codec",
-			in: ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: ""},
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: ""},
 			want: false,
 		},
 		{
 			name: "audio codec none",
-			in: ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none"},
+			in:   ytdlpFormat{Ext: "mp4", VideoCodec: "avc1", AudioCodec: "none"},
 			want: false,
 		},
 	}
@@ -627,14 +631,76 @@ func TestResolve(t *testing.T) {
 		if result.Formats[2].Type != "mp3" {
 			t.Fatalf("expected synthetic mp3 option at tail, got %+v", result.Formats[2])
 		}
+		if result.HeatmapMeta.AlgorithmVersion == "" {
+			t.Fatalf("expected algorithm version in heatmap meta")
+		}
+		if result.HeatmapMeta.Available {
+			t.Fatalf("expected no heatmap data for payload without heatmap")
+		}
+		if result.HeatmapMeta.Bins != 0 {
+			t.Fatalf("expected bins=0 for payload without heatmap, got %d", result.HeatmapMeta.Bins)
+		}
+		if len(result.Heatmap) != 0 {
+			t.Fatalf("expected empty heatmap payload, got %+v", result.Heatmap)
+		}
+		if len(result.KeyMoments) != 0 {
+			t.Fatalf("expected empty key moments, got %+v", result.KeyMoments)
+		}
+	})
+
+	t.Run("successful resolve includes heatmap and key moments", func(t *testing.T) {
+		payload := ytdlpOutput{
+			Title:    "Heatmap Video",
+			Duration: 100,
+			Formats: []ytdlpFormat{
+				progressiveFormat("18", 360, "https://cdn.example/18", 200, 0),
+			},
+			Heatmap: []ytdlpHeatmapPoint{
+				heatmapBin(0, 10, 1.0),
+				heatmapBin(10, 20, 0.35),
+				heatmapBin(20, 30, 0.22),
+				heatmapBin(30, 40, 0.20),
+				heatmapBin(40, 50, 0.30),
+				heatmapBin(50, 60, 0.95),
+				heatmapBin(60, 70, 0.25),
+				heatmapBin(70, 80, 0.88),
+				heatmapBin(80, 90, 0.30),
+				heatmapBin(90, 100, 0.20),
+			},
+		}
+		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{Stdout: mustJSON(t, payload)})
+		resolver := NewResolver(script, "", 60, 1080, 0)
+
+		result, err := resolver.Resolve(context.Background(), "https://www.youtube.com/watch?v=abc123")
+		if err != nil {
+			t.Fatalf("expected resolve success, got err: %v", err)
+		}
+		if !result.HeatmapMeta.Available {
+			t.Fatalf("expected heatmap available=true")
+		}
+		if result.HeatmapMeta.Bins != 10 {
+			t.Fatalf("expected heatmap bins=10, got %d", result.HeatmapMeta.Bins)
+		}
+		if result.HeatmapMeta.AlgorithmVersion == "" {
+			t.Fatalf("expected algorithm version")
+		}
+		if len(result.Heatmap) != 10 {
+			t.Fatalf("expected normalized heatmap points len=10, got %d", len(result.Heatmap))
+		}
+		if len(result.KeyMoments) == 0 {
+			t.Fatalf("expected non-empty key moments")
+		}
+		if got := result.KeyMoments; len(got) != 2 || got[0] != 55 || got[1] != 75 {
+			t.Fatalf("unexpected key moments: %+v", got)
+		}
 	})
 
 	t.Run("successful resolve with curl input + js runtime + header + user agent", func(t *testing.T) {
 		payload := ytdlpOutput{
-			Title:    "Curl Video",
-			Duration: 30,
+			Title:     "Curl Video",
+			Duration:  30,
 			Thumbnail: "https://img.example/curl-thumb.jpg",
-			Formats:  []ytdlpFormat{progressiveFormat("18", 360, "https://cdn.example/18", 150, 0)},
+			Formats:   []ytdlpFormat{progressiveFormat("18", 360, "https://cdn.example/18", 150, 0)},
 		}
 		script := makeFakeYTDLPScript(t, fakeYTDLPScriptOptions{
 			Stdout:            mustJSON(t, payload),

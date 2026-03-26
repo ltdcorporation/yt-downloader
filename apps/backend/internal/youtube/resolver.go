@@ -15,6 +15,8 @@ import (
 	"time"
 
 	shlex "github.com/google/shlex"
+
+	"yt-downloader/backend/internal/heatmap"
 )
 
 type Resolver struct {
@@ -36,20 +38,24 @@ type Format struct {
 }
 
 type ResolveResult struct {
-	Title           string   `json:"title"`
-	Thumbnail       string   `json:"thumbnail"`
-	DurationSeconds int      `json:"duration_seconds"`
-	Formats         []Format `json:"formats"`
+	Title           string          `json:"title"`
+	Thumbnail       string          `json:"thumbnail"`
+	DurationSeconds int             `json:"duration_seconds"`
+	Formats         []Format        `json:"formats"`
+	Heatmap         []heatmap.Point `json:"heatmap,omitempty"`
+	KeyMoments      []int           `json:"key_moments,omitempty"`
+	HeatmapMeta     heatmap.Meta    `json:"heatmap_meta"`
 }
 
 type ytdlpOutput struct {
-	Title      string        `json:"title"`
-	Thumbnail  string        `json:"thumbnail"`
-	Thumbnails []thumbnail   `json:"thumbnails"`
-	Duration   float64       `json:"duration"`
-	IsLive     bool          `json:"is_live"`
-	LiveStatus string        `json:"live_status"`
-	Formats    []ytdlpFormat `json:"formats"`
+	Title      string              `json:"title"`
+	Thumbnail  string              `json:"thumbnail"`
+	Thumbnails []thumbnail         `json:"thumbnails"`
+	Duration   float64             `json:"duration"`
+	IsLive     bool                `json:"is_live"`
+	LiveStatus string              `json:"live_status"`
+	Formats    []ytdlpFormat       `json:"formats"`
+	Heatmap    []ytdlpHeatmapPoint `json:"heatmap"`
 }
 
 type thumbnail struct {
@@ -67,6 +73,12 @@ type ytdlpFormat struct {
 	Filesize       int64   `json:"filesize"`
 	FilesizeApprox int64   `json:"filesize_approx"`
 	TBR            float64 `json:"tbr"`
+}
+
+type ytdlpHeatmapPoint struct {
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+	Value     float64 `json:"value"`
 }
 
 func NewResolver(ytdlpBinary string, ytdlpJSRuntimes string, maxDurationMinutes int, maxQuality int, maxFileSizeBytes int64) *Resolver {
@@ -169,11 +181,16 @@ func (r *Resolver) Resolve(ctx context.Context, rawURL string) (ResolveResult, e
 		return ResolveResult{}, errors.New("no downloadable MP4 format is available")
 	}
 
+	normalizedHeatmap, keyMoments, heatmapMeta := heatmap.Analyze(convertHeatmapPoints(payload.Heatmap), duration)
+
 	return ResolveResult{
 		Title:           payload.Title,
 		Thumbnail:       chooseThumbnail(payload),
 		DurationSeconds: duration,
 		Formats:         formats,
+		Heatmap:         normalizedHeatmap,
+		KeyMoments:      keyMoments,
+		HeatmapMeta:     heatmapMeta,
 	}, nil
 }
 
@@ -283,6 +300,21 @@ func ParseInput(rawInput string) (string, map[string]string, string, error) {
 	}
 
 	return strings.TrimSpace(targetURL), headers, userAgent, nil
+}
+
+func convertHeatmapPoints(raw []ytdlpHeatmapPoint) []heatmap.Point {
+	if len(raw) == 0 {
+		return nil
+	}
+	points := make([]heatmap.Point, 0, len(raw))
+	for _, item := range raw {
+		points = append(points, heatmap.Point{
+			StartTime: item.StartTime,
+			EndTime:   item.EndTime,
+			Value:     item.Value,
+		})
+	}
+	return points
 }
 
 func (r *Resolver) selectFormats(raw []ytdlpFormat) []Format {
