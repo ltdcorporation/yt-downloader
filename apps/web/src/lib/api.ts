@@ -213,6 +213,113 @@ export interface SettingsPatchRequest {
   };
 }
 
+export type MaintenanceServiceKey =
+  | "api_gateway"
+  | "primary_database"
+  | "worker_nodes";
+
+export type MaintenanceServiceStatus =
+  | "active"
+  | "maintenance"
+  | "scaling"
+  | "refreshing";
+
+export interface MaintenanceServiceItem {
+  key: MaintenanceServiceKey;
+  name: string;
+  status: MaintenanceServiceStatus;
+  enabled: boolean;
+}
+
+export interface MaintenanceSnapshotResponse {
+  maintenance: {
+    enabled: boolean;
+    estimated_downtime: string;
+    public_message: string;
+    services: MaintenanceServiceItem[];
+  };
+  meta: {
+    version: number;
+    updated_at: string;
+    updated_by_user_id?: string;
+  };
+}
+
+export interface MaintenancePatchRequest {
+  maintenance: {
+    enabled?: boolean;
+    estimated_downtime?: string;
+    public_message?: string;
+    services?: Array<{
+      key: MaintenanceServiceKey;
+      status?: MaintenanceServiceStatus;
+      enabled?: boolean;
+    }>;
+  };
+  meta: {
+    version: number;
+  };
+}
+
+export type SubscriptionStatus =
+  | "active"
+  | "inactive"
+  | "expired"
+  | "cancel_scheduled";
+
+export interface SubscriptionBenefit {
+  id: string;
+  label: string;
+}
+
+export interface SubscriptionSummary {
+  plan: UserPlan;
+  status: SubscriptionStatus;
+  interval: string;
+  price_cents: number;
+  currency: string;
+  plan_expires_at?: string;
+  next_billing_at?: string;
+  cancel_at_period_end: boolean;
+  benefits: SubscriptionBenefit[];
+}
+
+export interface BillingPaymentMethod {
+  brand: string;
+  last4: string;
+  exp_month: number;
+  exp_year: number;
+  updated_at?: string;
+}
+
+export interface SubscriptionDashboardResponse {
+  subscription: SubscriptionSummary;
+  payment_method: BillingPaymentMethod;
+}
+
+export type BillingInvoiceStatus = "paid" | "pending" | "failed";
+
+export interface BillingInvoice {
+  id: string;
+  issued_at: string;
+  amount_cents: number;
+  amount: string;
+  currency: string;
+  status: BillingInvoiceStatus;
+  receipt_url?: string;
+  period_start?: string;
+  period_end?: string;
+}
+
+export interface BillingHistoryResponse {
+  items: BillingInvoice[];
+  page: {
+    total: number;
+    limit: number;
+    offset: number;
+  };
+}
+
 export interface ProfileResponse {
   profile: AuthUser;
 }
@@ -270,11 +377,6 @@ export async function fetcher<T>(
     if (adminAuth && !headers.has("Authorization")) {
       headers.set("Authorization", `Basic ${adminAuth}`);
     }
-  }
-
-  // Debug (temporary): Check headers if it's the auth/me endpoint
-  if (endpoint.includes("/auth/me")) {
-    console.log(`[API Debug] Fetching ${endpoint} with Auth:`, headers.has("Authorization"));
   }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -415,6 +517,66 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  getMaintenance: () =>
+    fetcher<MaintenanceSnapshotResponse>("/v1/maintenance"),
+
+  getAdminMaintenance: () =>
+    fetcher<MaintenanceSnapshotResponse>("/v1/admin/maintenance"),
+
+  updateAdminMaintenance: (payload: MaintenancePatchRequest) =>
+    fetcher<MaintenanceSnapshotResponse>("/v1/admin/maintenance", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  getSubscription: () =>
+    fetcher<SubscriptionDashboardResponse>("/v1/subscription"),
+
+  updateSubscription: (payload: { plan: UserPlan }) =>
+    fetcher<SubscriptionDashboardResponse>("/v1/subscription", {
+      method: "PATCH",
+      body: JSON.stringify({
+        subscription: {
+          plan: payload.plan,
+        },
+      }),
+    }),
+
+  cancelSubscription: (payload?: { immediate?: boolean }) =>
+    fetcher<SubscriptionDashboardResponse>("/v1/subscription/cancel", {
+      method: "POST",
+      body: JSON.stringify({
+        immediate: payload?.immediate ?? false,
+      }),
+    }),
+
+  reactivateSubscription: () =>
+    fetcher<SubscriptionDashboardResponse>("/v1/subscription/reactivate", {
+      method: "POST",
+    }),
+
+  listBillingHistory: (params?: { limit?: number; offset?: number }) => {
+    const query = new URLSearchParams();
+
+    if (typeof params?.limit === "number" && params.limit > 0) {
+      query.set("limit", String(params.limit));
+    }
+    if (typeof params?.offset === "number" && params.offset >= 0) {
+      query.set("offset", String(params.offset));
+    }
+
+    const suffix = query.toString();
+    return fetcher<BillingHistoryResponse>(
+      suffix ? `/v1/billing/history?${suffix}` : "/v1/billing/history",
+    );
+  },
+
+  getBillingInvoice: (invoiceID: string) =>
+    fetcher<BillingInvoice>(`/v1/billing/invoices/${encodeURIComponent(invoiceID)}`),
+
+  getBillingReceiptUrl: (invoiceID: string) =>
+    `${API_BASE_URL}/v1/billing/invoices/${encodeURIComponent(invoiceID)}/receipt`,
 
   resolve: (url: string) => {
     const platform = detectPlatform(url);
