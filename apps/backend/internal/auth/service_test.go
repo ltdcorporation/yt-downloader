@@ -512,6 +512,12 @@ func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	if _, err := nilService.UpdateAvatarURL(ctx, "usr", "https://avatar.indobang.site/avatars/usr.webp"); err == nil {
 		t.Fatalf("expected nil service update avatar error")
 	}
+	if _, err := nilService.GetUser(ctx, "usr"); err == nil {
+		t.Fatalf("expected nil service get user error")
+	}
+	if _, err := nilService.UpdateUserByAdmin(ctx, "usr_admin", "usr", AdminUpdateUserInput{Role: func() *Role { role := RoleAdmin; return &role }()}); err == nil {
+		t.Fatalf("expected nil service admin update error")
+	}
 
 	svc := newTestService(t, Options{})
 	if _, err := svc.Login(ctx, LoginInput{Email: "bad-email", Password: "abc"}); err == nil {
@@ -553,5 +559,98 @@ func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	svc = NewService(storeWithErrors, Options{})
 	if _, err := svc.AuthenticateToken(ctx, "st_token"); !errors.Is(err, expected) {
 		t.Fatalf("expected getUserByID error propagation, got %v", err)
+	}
+}
+
+func TestService_GetUserAndUpdateUserByAdmin(t *testing.T) {
+	ctx := context.Background()
+	svc := newTestService(t, Options{})
+
+	adminReg, err := svc.RegisterAdmin(ctx, RegisterInput{
+		FullName: "Admin Root",
+		Email:    "admin@example.com",
+		Password: "StrongPass123",
+	})
+	if err != nil {
+		t.Fatalf("register admin failed: %v", err)
+	}
+
+	memberReg, err := svc.Register(ctx, RegisterInput{
+		FullName: "Regular Member",
+		Email:    "member@example.com",
+		Password: "StrongPass123",
+	})
+	if err != nil {
+		t.Fatalf("register user failed: %v", err)
+	}
+
+	gotUser, err := svc.GetUser(ctx, memberReg.User.ID)
+	if err != nil {
+		t.Fatalf("GetUser failed: %v", err)
+	}
+	if gotUser.Email != "member@example.com" {
+		t.Fatalf("unexpected user email: %s", gotUser.Email)
+	}
+
+	newRole := RoleAdmin
+	newPlan := PlanWeekly
+	newName := "  Upgraded  Member  "
+	planExpiresAt := time.Now().UTC().Add(7 * 24 * time.Hour).Truncate(time.Second)
+	updatedUser, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{
+		FullName:         &newName,
+		Role:             &newRole,
+		Plan:             &newPlan,
+		PlanExpiresAtSet: true,
+		PlanExpiresAt:    &planExpiresAt,
+	})
+	if err != nil {
+		t.Fatalf("UpdateUserByAdmin failed: %v", err)
+	}
+	if updatedUser.Role != RoleAdmin {
+		t.Fatalf("expected role admin, got %s", updatedUser.Role)
+	}
+	if updatedUser.Plan != PlanWeekly {
+		t.Fatalf("expected plan weekly, got %s", updatedUser.Plan)
+	}
+	if updatedUser.FullName != "Upgraded Member" {
+		t.Fatalf("expected normalized full name, got %q", updatedUser.FullName)
+	}
+	if updatedUser.PlanExpiresAt == nil || !updatedUser.PlanExpiresAt.Equal(planExpiresAt.UTC()) {
+		t.Fatalf("unexpected plan expires at: %+v", updatedUser.PlanExpiresAt)
+	}
+
+	freePlan := PlanFree
+	cleared, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{
+		Plan:             &freePlan,
+		PlanExpiresAtSet: true,
+		PlanExpiresAt:    &planExpiresAt,
+	})
+	if err != nil {
+		t.Fatalf("UpdateUserByAdmin free plan failed: %v", err)
+	}
+	if cleared.Plan != PlanFree {
+		t.Fatalf("expected plan free after downgrade, got %s", cleared.Plan)
+	}
+	if cleared.PlanExpiresAt != nil {
+		t.Fatalf("expected plan_expires_at cleared for free plan, got %+v", cleared.PlanExpiresAt)
+	}
+
+	memberRole := RoleUser
+	if _, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, adminReg.User.ID, AdminUpdateUserInput{Role: &memberRole}); err == nil {
+		t.Fatalf("expected self-demotion validation error")
+	}
+
+	invalidRole := Role("owner")
+	if _, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{Role: &invalidRole}); err == nil {
+		t.Fatalf("expected invalid role validation error")
+	}
+
+	invalidPlan := Plan("yearly")
+	if _, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{Plan: &invalidPlan}); err == nil {
+		t.Fatalf("expected invalid plan validation error")
+	}
+
+	if _, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{}); err == nil {
+		t.Fatalf("expected empty patch validation error")
 	}
 }

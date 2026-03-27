@@ -143,6 +143,40 @@ func (m *memoryBackend) UpdateUserAvatarURL(_ context.Context, userID, avatarURL
 	return user, nil
 }
 
+func (m *memoryBackend) UpdateUserByAdmin(_ context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user, ok := m.usersByID[userID]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+
+	if patch.FullName != nil {
+		user.FullName = *patch.FullName
+	}
+	if patch.Role != nil {
+		user.Role = *patch.Role
+	}
+	if patch.Plan != nil {
+		user.Plan = *patch.Plan
+	}
+	if patch.PlanExpiresAtSet {
+		if patch.PlanExpiresAt == nil {
+			user.PlanExpiresAt = nil
+		} else {
+			expiresAt := patch.PlanExpiresAt.UTC()
+			user.PlanExpiresAt = &expiresAt
+		}
+	}
+	user.UpdatedAt = updatedAt.UTC()
+
+	m.usersByID[userID] = user
+	m.usersByEmail[user.Email] = user
+
+	return user, nil
+}
+
 func (m *memoryBackend) GetUserByGoogleSubject(_ context.Context, googleSubject string) (User, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

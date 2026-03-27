@@ -339,11 +339,15 @@ func (s *Server) Handler() http.Handler {
 		r.Use(s.adminAuth)
 		r.Get("/jobs", s.handleAdminJobs)
 		r.Get("/users", s.handleAdminUsersList)
+		r.Get("/users/{id}", s.handleAdminUserGet)
+		r.Patch("/users/{id}", s.handleAdminUserPatch)
 	})
 
 	r.Route("/v1/admin", func(r chi.Router) {
 		r.Use(s.adminAuth)
 		r.Get("/users", s.handleAdminUsersList)
+		r.Get("/users/{id}", s.handleAdminUserGet)
+		r.Patch("/users/{id}", s.handleAdminUserPatch)
 	})
 
 	return r
@@ -841,6 +845,11 @@ func (s *Server) detectPlatform(rawURL string) string {
 }
 
 func (s *Server) handleAdminUsersList(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
+		return
+	}
+
 	limit := 20
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -930,6 +939,10 @@ func (s *Server) adminAuth(next http.Handler) http.Handler {
 		// Try Session Auth (Bearer token or Cookie)
 		token := s.readSessionToken(r)
 		if token != "" {
+			if s.authService == nil {
+				writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
+				return
+			}
 			identity, err := s.authService.AuthenticateToken(r.Context(), token)
 			if err == nil {
 				if identity.User.Role == auth.RoleAdmin {

@@ -60,6 +60,35 @@ func TestMemoryBackend_UserAndSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound on avatar update missing user, got %v", err)
 	}
 
+	role := RoleAdmin
+	plan := PlanWeekly
+	planExpiresAt := avatarUpdatedAt.Add(7 * 24 * time.Hour)
+	adminUpdatedAt := avatarUpdatedAt.Add(time.Minute)
+	updatedUser, err = backend.UpdateUserByAdmin(ctx, user.ID, AdminUserPatch{
+		Role:             &role,
+		Plan:             &plan,
+		PlanExpiresAtSet: true,
+		PlanExpiresAt:    &planExpiresAt,
+	}, adminUpdatedAt)
+	if err != nil {
+		t.Fatalf("UpdateUserByAdmin failed: %v", err)
+	}
+	if updatedUser.Role != RoleAdmin {
+		t.Fatalf("expected role admin after admin update, got %s", updatedUser.Role)
+	}
+	if updatedUser.Plan != PlanWeekly {
+		t.Fatalf("expected weekly plan after admin update, got %s", updatedUser.Plan)
+	}
+	if updatedUser.PlanExpiresAt == nil || !updatedUser.PlanExpiresAt.Equal(planExpiresAt.UTC()) {
+		t.Fatalf("unexpected plan_expires_at after admin update: %+v", updatedUser.PlanExpiresAt)
+	}
+	if !updatedUser.UpdatedAt.Equal(adminUpdatedAt) {
+		t.Fatalf("unexpected updated timestamp after admin update: got %s want %s", updatedUser.UpdatedAt, adminUpdatedAt)
+	}
+	if _, err := backend.UpdateUserByAdmin(ctx, "usr_missing", AdminUserPatch{Role: &role}, adminUpdatedAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on admin update missing user, got %v", err)
+	}
+
 	gotUser, err := backend.GetUserByEmail(ctx, user.Email)
 	if err != nil {
 		t.Fatalf("GetUserByEmail failed: %v", err)

@@ -53,6 +53,14 @@ type User struct {
 	UpdatedAt     time.Time
 }
 
+type AdminUserPatch struct {
+	FullName         *string
+	Role             *Role
+	Plan             *Plan
+	PlanExpiresAtSet bool
+	PlanExpiresAt    *time.Time
+}
+
 type Session struct {
 	ID           string
 	UserID       string
@@ -85,6 +93,7 @@ type backend interface {
 	GetUserByID(ctx context.Context, userID string) (User, error)
 	UpdateUserFullName(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	UpdateUserAvatarURL(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error)
+	UpdateUserByAdmin(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error)
 	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
 	ListUsers(ctx context.Context, limit int, offset int) ([]User, int, error)
 	CreateSession(ctx context.Context, session Session) error
@@ -193,6 +202,59 @@ func (s *Store) UpdateUserAvatarURL(ctx context.Context, userID, avatarURL strin
 	}
 
 	return s.backend.UpdateUserAvatarURL(ctx, trimmedUserID, trimmedAvatarURL, updatedAt.UTC())
+}
+
+func (s *Store) UpdateUserByAdmin(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error) {
+	if s == nil || s.backend == nil {
+		return User{}, errors.New("auth store is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return User{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	if patch.FullName != nil {
+		trimmed := strings.TrimSpace(*patch.FullName)
+		if trimmed == "" {
+			return User{}, &ValidationError{Message: "full_name is required"}
+		}
+		patch.FullName = &trimmed
+	}
+
+	if patch.Role != nil {
+		trimmedRole := Role(strings.TrimSpace(string(*patch.Role)))
+		if trimmedRole != RoleAdmin && trimmedRole != RoleUser {
+			return User{}, &ValidationError{Message: "role must be one of: admin, user"}
+		}
+		patch.Role = &trimmedRole
+	}
+
+	if patch.Plan != nil {
+		trimmedPlan := Plan(strings.TrimSpace(string(*patch.Plan)))
+		switch trimmedPlan {
+		case PlanFree, PlanDaily, PlanWeekly, PlanMonthly:
+			// valid
+		default:
+			return User{}, &ValidationError{Message: "plan must be one of: free, daily, weekly, monthly"}
+		}
+		patch.Plan = &trimmedPlan
+	}
+
+	if patch.PlanExpiresAtSet && patch.PlanExpiresAt != nil {
+		value := patch.PlanExpiresAt.UTC()
+		patch.PlanExpiresAt = &value
+	}
+
+	if patch.FullName == nil && patch.Role == nil && patch.Plan == nil && !patch.PlanExpiresAtSet {
+		return User{}, &ValidationError{Message: "at least one field must be provided"}
+	}
+
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+
+	return s.backend.UpdateUserByAdmin(ctx, trimmedUserID, patch, updatedAt.UTC())
 }
 
 func (s *Store) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {

@@ -305,6 +305,66 @@ func (p *postgresBackend) UpdateUserAvatarURL(ctx context.Context, userID, avata
 	return user, nil
 }
 
+func (p *postgresBackend) UpdateUserByAdmin(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return User{}, err
+	}
+
+	setClauses := make([]string, 0, 5)
+	args := make([]any, 0, 6)
+	args = append(args, userID)
+	argPos := 2
+
+	if patch.FullName != nil {
+		setClauses = append(setClauses, fmt.Sprintf("full_name = $%d", argPos))
+		args = append(args, *patch.FullName)
+		argPos++
+	}
+	if patch.Role != nil {
+		setClauses = append(setClauses, fmt.Sprintf("role = $%d", argPos))
+		args = append(args, *patch.Role)
+		argPos++
+	}
+	if patch.Plan != nil {
+		setClauses = append(setClauses, fmt.Sprintf("plan = $%d", argPos))
+		args = append(args, *patch.Plan)
+		argPos++
+	}
+	if patch.PlanExpiresAtSet {
+		setClauses = append(setClauses, fmt.Sprintf("plan_expires_at = $%d", argPos))
+		if patch.PlanExpiresAt == nil {
+			args = append(args, nil)
+		} else {
+			expiresAt := patch.PlanExpiresAt.UTC()
+			args = append(args, expiresAt)
+		}
+		argPos++
+	}
+
+	if len(setClauses) == 0 {
+		return p.GetUserByID(ctx, userID)
+	}
+
+	setClauses = append(setClauses, fmt.Sprintf("updated_at = $%d", argPos))
+	args = append(args, updatedAt.UTC())
+
+	query := fmt.Sprintf(`UPDATE auth_users
+		 SET %s
+		 WHERE id = $1
+		 RETURNING id, full_name, email, avatar_url, password_hash, role, plan, plan_expires_at, created_at, updated_at`, strings.Join(setClauses, ",\n\t\t     "))
+
+	row := p.db.QueryRowContext(ctx, query, args...)
+	user, err := scanUserRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrUserNotFound
+		}
+		return User{}, fmt.Errorf("update auth user by admin: %w", err)
+	}
+
+	return user, nil
+}
+
 func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
 	if err := p.ensureSchema(ctx); err != nil {
 		return User{}, err
@@ -328,9 +388,9 @@ func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubj
 	}
 
 	return user, nil
-	}
+}
 
-	func (p *postgresBackend) ListUsers(ctx context.Context, limit, offset int) ([]User, int, error) {
+func (p *postgresBackend) ListUsers(ctx context.Context, limit, offset int) ([]User, int, error) {
 	if err := p.ensureSchema(ctx); err != nil {
 		return nil, 0, err
 	}
@@ -372,9 +432,9 @@ func (p *postgresBackend) GetUserByGoogleSubject(ctx context.Context, googleSubj
 	}
 
 	return users, total, nil
-	}
+}
 
-	func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
+func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
 	if err := p.ensureSchema(ctx); err != nil {
 		return err
 	}

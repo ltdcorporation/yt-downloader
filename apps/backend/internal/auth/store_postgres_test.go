@@ -29,6 +29,14 @@ func q(query string) string {
 	return regexp.QuoteMeta(query)
 }
 
+func ptrRole(role Role) *Role {
+	return &role
+}
+
+func ptrPlan(plan Plan) *Plan {
+	return &plan
+}
+
 func expectSchemaExec(mock sqlmock.Sqlmock) {
 	mock.ExpectExec("CREATE TABLE IF NOT EXISTS auth_users").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_users_email").WillReturnResult(sqlmock.NewResult(0, 0))
@@ -285,6 +293,30 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 	mock.ExpectQuery(updateAvatarURLQuery).WithArgs("missing", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt).WillReturnError(sql.ErrNoRows)
 	if _, err := backend.UpdateUserAvatarURL(context.Background(), "missing", "https://avatar.indobang.site/avatars/usr_1/new.webp", updateAt); !errors.Is(err, ErrUserNotFound) {
 		t.Fatalf("expected ErrUserNotFound on avatar update, got %v", err)
+	}
+
+	planExpiresAt := updateAt.Add(30 * 24 * time.Hour)
+	rows = sqlmock.NewRows(rowColumns).AddRow("usr_1", "Renamed User", "user@example.com", nil, "hash", RoleAdmin, PlanMonthly, planExpiresAt, now, updateAt)
+	mock.ExpectQuery("UPDATE auth_users").WithArgs("usr_1", RoleAdmin, PlanMonthly, planExpiresAt, updateAt).WillReturnRows(rows)
+	adminUpdated, err := backend.UpdateUserByAdmin(context.Background(), "usr_1", AdminUserPatch{
+		Role:             ptrRole(RoleAdmin),
+		Plan:             ptrPlan(PlanMonthly),
+		PlanExpiresAtSet: true,
+		PlanExpiresAt:    &planExpiresAt,
+	}, updateAt)
+	if err != nil {
+		t.Fatalf("UpdateUserByAdmin failed: %v", err)
+	}
+	if adminUpdated.Role != RoleAdmin || adminUpdated.Plan != PlanMonthly {
+		t.Fatalf("unexpected admin updated user: %+v", adminUpdated)
+	}
+	if adminUpdated.PlanExpiresAt == nil || !adminUpdated.PlanExpiresAt.Equal(planExpiresAt.UTC()) {
+		t.Fatalf("unexpected admin plan expires at: %+v", adminUpdated.PlanExpiresAt)
+	}
+
+	mock.ExpectQuery("UPDATE auth_users").WithArgs("missing", RoleAdmin, updateAt).WillReturnError(sql.ErrNoRows)
+	if _, err := backend.UpdateUserByAdmin(context.Background(), "missing", AdminUserPatch{Role: ptrRole(RoleAdmin)}, updateAt); !errors.Is(err, ErrUserNotFound) {
+		t.Fatalf("expected ErrUserNotFound on admin update, got %v", err)
 	}
 
 	rows = sqlmock.NewRows(rowColumns).AddRow("usr_2", "Google", "google@example.com", nil, "hash", RoleUser, PlanFree, nil, now, now)

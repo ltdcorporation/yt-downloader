@@ -102,6 +102,14 @@ type UpdateProfileInput struct {
 	FullName string
 }
 
+type AdminUpdateUserInput struct {
+	FullName         *string
+	Role             *Role
+	Plan             *Plan
+	PlanExpiresAtSet bool
+	PlanExpiresAt    *time.Time
+}
+
 type Service struct {
 	store *Store
 	now   func() time.Time
@@ -203,7 +211,6 @@ func (s *Service) registerWithRole(ctx context.Context, input RegisterInput, rol
 
 	return buildAuthResult(user, token, session.ExpiresAt), nil
 }
-
 
 func (s *Service) Login(ctx context.Context, input LoginInput) (AuthResult, error) {
 	if s == nil || s.store == nil {
@@ -443,16 +450,7 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, input Update
 		return PublicUser{}, err
 	}
 
-	return PublicUser{
-		ID:            user.ID,
-		FullName:      user.FullName,
-		Email:         user.Email,
-		AvatarURL:     user.AvatarURL,
-		Role:          user.Role,
-		Plan:          user.Plan,
-		PlanExpiresAt: user.PlanExpiresAt,
-		CreatedAt:     user.CreatedAt,
-	}, nil
+	return publicUserFromUser(user), nil
 }
 
 func (s *Service) UpdateAvatarURL(ctx context.Context, userID, avatarURL string) (PublicUser, error) {
@@ -470,16 +468,7 @@ func (s *Service) UpdateAvatarURL(ctx context.Context, userID, avatarURL string)
 		return PublicUser{}, err
 	}
 
-	return PublicUser{
-		ID:            user.ID,
-		FullName:      user.FullName,
-		Email:         user.Email,
-		AvatarURL:     user.AvatarURL,
-		Role:          user.Role,
-		Plan:          user.Plan,
-		PlanExpiresAt: user.PlanExpiresAt,
-		CreatedAt:     user.CreatedAt,
-	}, nil
+	return publicUserFromUser(user), nil
 }
 
 func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]PublicUser, int, error) {
@@ -494,19 +483,122 @@ func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]PublicUse
 
 	publicUsers := make([]PublicUser, 0, len(users))
 	for _, user := range users {
-		publicUsers = append(publicUsers, PublicUser{
-			ID:            user.ID,
-			FullName:      user.FullName,
-			Email:         user.Email,
-			AvatarURL:     user.AvatarURL,
-			Role:          user.Role,
-			Plan:          user.Plan,
-			PlanExpiresAt: user.PlanExpiresAt,
-			CreatedAt:     user.CreatedAt,
-		})
+		publicUsers = append(publicUsers, publicUserFromUser(user))
 	}
 
 	return publicUsers, total, nil
+}
+
+func (s *Service) GetUser(ctx context.Context, userID string) (PublicUser, error) {
+	if s == nil || s.store == nil {
+		return PublicUser{}, errors.New("auth service is not initialized")
+	}
+
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return PublicUser{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	user, err := s.store.GetUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	return publicUserFromUser(user), nil
+}
+
+func (s *Service) UpdateUserByAdmin(ctx context.Context, actorUserID, targetUserID string, input AdminUpdateUserInput) (PublicUser, error) {
+	if s == nil || s.store == nil {
+		return PublicUser{}, errors.New("auth service is not initialized")
+	}
+
+	targetUserID = strings.TrimSpace(targetUserID)
+	if targetUserID == "" {
+		return PublicUser{}, &ValidationError{Message: "user_id is required"}
+	}
+
+	if input.FullName == nil && input.Role == nil && input.Plan == nil && !input.PlanExpiresAtSet {
+		return PublicUser{}, &ValidationError{Message: "at least one field must be provided"}
+	}
+
+	current, err := s.store.GetUserByID(ctx, targetUserID)
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	next := current
+
+	if input.FullName != nil {
+		normalizedName, err := normalizeFullName(*input.FullName)
+		if err != nil {
+			return PublicUser{}, err
+		}
+		next.FullName = normalizedName
+	}
+
+	if input.Role != nil {
+		role := Role(strings.TrimSpace(string(*input.Role)))
+		if role != RoleAdmin && role != RoleUser {
+			return PublicUser{}, &ValidationError{Message: "role must be one of: admin, user"}
+		}
+		if strings.TrimSpace(actorUserID) != "" && strings.TrimSpace(actorUserID) == targetUserID && current.Role == RoleAdmin && role != RoleAdmin {
+			return PublicUser{}, &ValidationError{Message: "cannot remove your own admin role"}
+		}
+		next.Role = role
+	}
+
+	if input.Plan != nil {
+		plan := Plan(strings.TrimSpace(string(*input.Plan)))
+		switch plan {
+		case PlanFree, PlanDaily, PlanWeekly, PlanMonthly:
+			// valid
+		default:
+			return PublicUser{}, &ValidationError{Message: "plan must be one of: free, daily, weekly, monthly"}
+		}
+		next.Plan = plan
+	}
+
+	if input.PlanExpiresAtSet {
+		if input.PlanExpiresAt == nil {
+			next.PlanExpiresAt = nil
+		} else {
+			expiresAt := input.PlanExpiresAt.UTC()
+			next.PlanExpiresAt = &expiresAt
+		}
+	}
+
+	if next.Plan == PlanFree {
+		next.PlanExpiresAt = nil
+	} else if next.PlanExpiresAt == nil {
+		expiresAt := s.now().Add(defaultPlanDuration(next.Plan))
+		next.PlanExpiresAt = &expiresAt
+	}
+
+	patch := AdminUserPatch{}
+	if next.FullName != current.FullName {
+		patch.FullName = &next.FullName
+	}
+	if next.Role != current.Role {
+		patch.Role = &next.Role
+	}
+	if next.Plan != current.Plan {
+		patch.Plan = &next.Plan
+	}
+	if !timesEqual(next.PlanExpiresAt, current.PlanExpiresAt) {
+		patch.PlanExpiresAtSet = true
+		patch.PlanExpiresAt = next.PlanExpiresAt
+	}
+
+	if patch.FullName == nil && patch.Role == nil && patch.Plan == nil && !patch.PlanExpiresAtSet {
+		return publicUserFromUser(current), nil
+	}
+
+	updatedUser, err := s.store.UpdateUserByAdmin(ctx, targetUserID, patch, s.now())
+	if err != nil {
+		return PublicUser{}, err
+	}
+
+	return publicUserFromUser(updatedUser), nil
 }
 
 func (s *Service) issueSessionForUser(ctx context.Context, user User, keepLoggedIn bool, clientIP, userAgent string) (AuthResult, error) {
@@ -565,19 +657,46 @@ func (s *Service) generateUnusablePasswordHash() (string, error) {
 
 func buildAuthResult(user User, token string, expiresAt time.Time) AuthResult {
 	return AuthResult{
-		User: PublicUser{
-			ID:            user.ID,
-			FullName:      user.FullName,
-			Email:         user.Email,
-			AvatarURL:     user.AvatarURL,
-			Role:          user.Role,
-			Plan:          user.Plan,
-			PlanExpiresAt: user.PlanExpiresAt,
-			CreatedAt:     user.CreatedAt,
-		},
+		User:        publicUserFromUser(user),
 		AccessToken: token,
 		TokenType:   "Bearer",
 		ExpiresAt:   expiresAt,
+	}
+}
+
+func publicUserFromUser(user User) PublicUser {
+	return PublicUser{
+		ID:            user.ID,
+		FullName:      user.FullName,
+		Email:         user.Email,
+		AvatarURL:     user.AvatarURL,
+		Role:          user.Role,
+		Plan:          user.Plan,
+		PlanExpiresAt: user.PlanExpiresAt,
+		CreatedAt:     user.CreatedAt,
+	}
+}
+
+func timesEqual(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.UTC().Equal(b.UTC())
+}
+
+func defaultPlanDuration(plan Plan) time.Duration {
+	switch plan {
+	case PlanDaily:
+		return 24 * time.Hour
+	case PlanWeekly:
+		return 7 * 24 * time.Hour
+	case PlanMonthly:
+		return 30 * 24 * time.Hour
+	default:
+		return 0
 	}
 }
 

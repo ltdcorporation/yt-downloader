@@ -19,6 +19,7 @@ type fakeBackend struct {
 	getUserByIDFn                        func(ctx context.Context, userID string) (User, error)
 	updateUserFullNameFn                 func(ctx context.Context, userID, fullName string, updatedAt time.Time) (User, error)
 	updateUserAvatarURLFn                func(ctx context.Context, userID, avatarURL string, updatedAt time.Time) (User, error)
+	updateUserByAdminFn                  func(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error)
 	getUserByGoogleSubjectFn             func(ctx context.Context, googleSubject string) (User, error)
 	listUsersFn                          func(ctx context.Context, limit, offset int) ([]User, int, error)
 	createSessionFn                      func(ctx context.Context, session Session) error
@@ -76,6 +77,13 @@ func (f *fakeBackend) UpdateUserAvatarURL(ctx context.Context, userID, avatarURL
 		return f.updateUserAvatarURLFn(ctx, userID, avatarURL, updatedAt)
 	}
 	return User{ID: userID, AvatarURL: avatarURL, UpdatedAt: updatedAt}, nil
+}
+
+func (f *fakeBackend) UpdateUserByAdmin(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error) {
+	if f.updateUserByAdminFn != nil {
+		return f.updateUserByAdminFn(ctx, userID, patch, updatedAt)
+	}
+	return User{ID: userID, UpdatedAt: updatedAt}, nil
 }
 
 func (f *fakeBackend) GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error) {
@@ -185,6 +193,9 @@ func TestStore_NilSafetyGuards(t *testing.T) {
 	if _, err := s.UpdateUserAvatarURL(ctx, "usr", "https://avatar.indobang.site/a.webp", time.Now()); err == nil {
 		t.Fatalf("expected error for uninitialized UpdateUserAvatarURL")
 	}
+	if _, err := s.UpdateUserByAdmin(ctx, "usr", AdminUserPatch{}, time.Now()); err == nil {
+		t.Fatalf("expected error for uninitialized UpdateUserByAdmin")
+	}
 	if _, err := s.GetUserByGoogleSubject(ctx, "sub"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByGoogleSubject")
 	}
@@ -212,6 +223,7 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	capturedUpdatedUserID := ""
 	capturedUpdatedFullName := ""
 	capturedUpdatedAvatarURL := ""
+	capturedAdminPatch := AdminUserPatch{}
 	capturedUpdatedAt := time.Time{}
 	capturedTokenHash := ""
 	capturedTouch := time.Time{}
@@ -258,6 +270,12 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 			capturedUpdatedAvatarURL = avatarURL
 			capturedUpdatedAt = updatedAt
 			return User{ID: userID, AvatarURL: avatarURL, UpdatedAt: updatedAt}, nil
+		},
+		updateUserByAdminFn: func(_ context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error) {
+			capturedUpdatedUserID = userID
+			capturedAdminPatch = patch
+			capturedUpdatedAt = updatedAt
+			return User{ID: userID, UpdatedAt: updatedAt}, nil
 		},
 		getUserByGoogleSubjectFn: func(_ context.Context, googleSubject string) (User, error) {
 			capturedGoogleSubject = googleSubject
@@ -348,6 +366,30 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 		t.Fatalf("expected avatar updatedAt forwarding, got %s want %s", capturedUpdatedAt, nowForUpdate)
 	}
 
+	role := RoleAdmin
+	plan := PlanMonthly
+	planExpiresAt := nowForUpdate.Add(30 * 24 * time.Hour)
+	if _, err := s.UpdateUserByAdmin(ctx, "  usr_abc ", AdminUserPatch{
+		Role:             &role,
+		Plan:             &plan,
+		PlanExpiresAtSet: true,
+		PlanExpiresAt:    &planExpiresAt,
+	}, nowForUpdate); err != nil {
+		t.Fatalf("UpdateUserByAdmin returned error: %v", err)
+	}
+	if capturedUpdatedUserID != "usr_abc" {
+		t.Fatalf("expected normalized admin update user id, got %q", capturedUpdatedUserID)
+	}
+	if capturedAdminPatch.Role == nil || *capturedAdminPatch.Role != RoleAdmin {
+		t.Fatalf("expected admin role patch, got %+v", capturedAdminPatch)
+	}
+	if capturedAdminPatch.Plan == nil || *capturedAdminPatch.Plan != PlanMonthly {
+		t.Fatalf("expected monthly plan patch, got %+v", capturedAdminPatch)
+	}
+	if !capturedAdminPatch.PlanExpiresAtSet || capturedAdminPatch.PlanExpiresAt == nil || !capturedAdminPatch.PlanExpiresAt.Equal(planExpiresAt.UTC()) {
+		t.Fatalf("expected plan expires patch forwarding, got %+v", capturedAdminPatch)
+	}
+
 	if _, err := s.GetUserByGoogleSubject(ctx, "  sub_abc  "); err != nil {
 		t.Fatalf("GetUserByGoogleSubject returned error: %v", err)
 	}
@@ -386,6 +428,25 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if capturedIdentity.GoogleSubject != "sub_new" || capturedIdentity.Email != "new@example.com" {
 		t.Fatalf("unexpected upsert google identity payload: %+v", capturedIdentity)
+	}
+
+	if _, err := s.UpdateUserByAdmin(ctx, "", AdminUserPatch{Role: &role}, nowForUpdate); err == nil {
+		t.Fatalf("expected validation error for empty user id")
+	}
+	if _, err := s.UpdateUserByAdmin(ctx, "usr_abc", AdminUserPatch{}, nowForUpdate); err == nil {
+		t.Fatalf("expected validation error for empty admin patch")
+	}
+	blankName := "   "
+	if _, err := s.UpdateUserByAdmin(ctx, "usr_abc", AdminUserPatch{FullName: &blankName}, nowForUpdate); err == nil {
+		t.Fatalf("expected validation error for blank full_name")
+	}
+	invalidRole := Role("owner")
+	if _, err := s.UpdateUserByAdmin(ctx, "usr_abc", AdminUserPatch{Role: &invalidRole}, nowForUpdate); err == nil {
+		t.Fatalf("expected validation error for invalid role")
+	}
+	invalidPlan := Plan("yearly")
+	if _, err := s.UpdateUserByAdmin(ctx, "usr_abc", AdminUserPatch{Plan: &invalidPlan}, nowForUpdate); err == nil {
+		t.Fatalf("expected validation error for invalid plan")
 	}
 
 	if err := s.Close(); err != nil {
