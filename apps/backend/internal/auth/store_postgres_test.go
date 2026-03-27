@@ -334,6 +334,18 @@ func TestPostgresBackend_GetUserByEmailByIDAndGoogleSubject(t *testing.T) {
 		t.Fatalf("expected ErrUserNotFound for subject, got %v", err)
 	}
 
+	statsNow := now.Add(2 * time.Hour)
+	statsRows := sqlmock.NewRows([]string{"total_users", "admin_users", "member_users", "free_users", "daily_users", "weekly_users", "monthly_users", "active_paid_users"}).
+		AddRow(12, 3, 9, 6, 1, 2, 3, 5)
+	mock.ExpectQuery("SELECT").WithArgs(statsNow).WillReturnRows(statsRows)
+	stats, err := backend.GetUserStats(context.Background(), statsNow)
+	if err != nil {
+		t.Fatalf("GetUserStats failed: %v", err)
+	}
+	if stats.TotalUsers != 12 || stats.AdminUsers != 3 || stats.ActivePaidUsers != 5 {
+		t.Fatalf("unexpected user stats: %+v", stats)
+	}
+
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet expectations: %v", err)
 	}

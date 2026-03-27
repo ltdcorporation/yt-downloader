@@ -489,6 +489,13 @@ func (s *Service) ListUsers(ctx context.Context, limit, offset int) ([]PublicUse
 	return publicUsers, total, nil
 }
 
+func (s *Service) GetUserStats(ctx context.Context) (UserStats, error) {
+	if s == nil || s.store == nil {
+		return UserStats{}, errors.New("auth service is not initialized")
+	}
+	return s.store.GetUserStats(ctx, s.now())
+}
+
 func (s *Service) GetUser(ctx context.Context, userID string) (PublicUser, error) {
 	if s == nil || s.store == nil {
 		return PublicUser{}, errors.New("auth service is not initialized")

@@ -61,6 +61,17 @@ type AdminUserPatch struct {
 	PlanExpiresAt    *time.Time
 }
 
+type UserStats struct {
+	TotalUsers      int `json:"total_users"`
+	AdminUsers      int `json:"admin_users"`
+	MemberUsers     int `json:"member_users"`
+	FreeUsers       int `json:"free_users"`
+	DailyUsers      int `json:"daily_users"`
+	WeeklyUsers     int `json:"weekly_users"`
+	MonthlyUsers    int `json:"monthly_users"`
+	ActivePaidUsers int `json:"active_paid_users"`
+}
+
 type Session struct {
 	ID           string
 	UserID       string
@@ -96,6 +107,7 @@ type backend interface {
 	UpdateUserByAdmin(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error)
 	GetUserByGoogleSubject(ctx context.Context, googleSubject string) (User, error)
 	ListUsers(ctx context.Context, limit int, offset int) ([]User, int, error)
+	GetUserStats(ctx context.Context, now time.Time) (UserStats, error)
 	CreateSession(ctx context.Context, session Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (Session, error)
 	TouchSession(ctx context.Context, tokenHash string, touchedAt time.Time) error
@@ -269,6 +281,16 @@ func (s *Store) ListUsers(ctx context.Context, limit int, offset int) ([]User, i
 		return nil, 0, errors.New("auth store is not initialized")
 	}
 	return s.backend.ListUsers(ctx, limit, offset)
+}
+
+func (s *Store) GetUserStats(ctx context.Context, now time.Time) (UserStats, error) {
+	if s == nil || s.backend == nil {
+		return UserStats{}, errors.New("auth store is not initialized")
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	return s.backend.GetUserStats(ctx, now.UTC())
 }
 
 func (s *Store) CreateSession(ctx context.Context, session Session) error {

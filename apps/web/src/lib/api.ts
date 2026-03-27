@@ -320,6 +320,37 @@ export interface BillingHistoryResponse {
   };
 }
 
+export interface AdminUsersStats {
+  total_users: number;
+  admin_users: number;
+  member_users: number;
+  free_users: number;
+  daily_users: number;
+  weekly_users: number;
+  monthly_users: number;
+  active_paid_users: number;
+}
+
+export interface AdminUsersStatsResponse {
+  stats: AdminUsersStats;
+}
+
+export type JobStatus = "queued" | "processing" | "done" | "failed";
+
+export interface AdminJobRecord {
+  id: string;
+  status: JobStatus | string;
+  input_url: string;
+  output_kind: string;
+  output_key?: string;
+  title?: string;
+  error?: string;
+  download_url?: string;
+  created_at: string;
+  updated_at: string;
+  expires_at?: string;
+}
+
 export interface ProfileResponse {
   profile: AuthUser;
 }
@@ -712,6 +743,26 @@ export const api = {
       page: { total: number; limit: number; offset: number };
     }>(`/v1/admin/users?limit=${limit}&offset=${offset}`),
 
+  getAdminUsersStats: () =>
+    fetcher<AdminUsersStatsResponse>("/v1/admin/users/stats"),
+
+  getAdminUser: (id: string) =>
+    fetcher<AuthUser>(`/v1/admin/users/${encodeURIComponent(id)}`),
+
+  updateAdminUser: (
+    id: string,
+    payload: {
+      full_name?: string;
+      role?: UserRole;
+      plan?: UserPlan;
+      plan_expires_at?: string;
+    },
+  ) =>
+    fetcher<AuthUser>(`/v1/admin/users/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
   adminJobs: (limit = 30) =>
-    fetcher<{ items: any[] }>(`/admin/jobs?limit=${limit}`),
+    fetcher<{ items: AdminJobRecord[] }>(`/admin/jobs?limit=${limit}`),
 };

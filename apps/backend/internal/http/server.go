@@ -374,6 +374,7 @@ func (s *Server) Handler() http.Handler {
 		r.Use(s.adminAuth)
 		r.Get("/jobs", s.handleAdminJobs)
 		r.Get("/users", s.handleAdminUsersList)
+		r.Get("/users/stats", s.handleAdminUsersStats)
 		r.Get("/users/{id}", s.handleAdminUserGet)
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
 		r.Get("/maintenance", s.handleAdminMaintenanceGet)
@@ -383,6 +384,7 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/v1/admin", func(r chi.Router) {
 		r.Use(s.adminAuth)
 		r.Get("/users", s.handleAdminUsersList)
+		r.Get("/users/stats", s.handleAdminUsersStats)
 		r.Get("/users/{id}", s.handleAdminUserGet)
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
 		r.Get("/maintenance", s.handleAdminMaintenanceGet)

@@ -19,6 +19,24 @@ type adminUserPatchRequest struct {
 	PlanExpiresAt *string `json:"plan_expires_at"`
 }
 
+func (s *Server) handleAdminUsersStats(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")
+		return
+	}
+
+	stats, err := s.authService.GetUserStats(r.Context())
+	if err != nil {
+		s.logger.Printf("failed to get admin user stats err=%v", err)
+		writeError(w, http.StatusInternalServerError, "failed to fetch user stats")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"stats": stats,
+	})
+}
+
 func (s *Server) handleAdminUserGet(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth service unavailable")

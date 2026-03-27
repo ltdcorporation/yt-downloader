@@ -228,6 +228,46 @@ func (m *memoryBackend) ListUsers(_ context.Context, limit, offset int) ([]User,
 	return allUsers[start:end], total, nil
 }
 
+func (m *memoryBackend) GetUserStats(_ context.Context, now time.Time) (UserStats, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	stats := UserStats{}
+	for _, user := range m.usersByID {
+		stats.TotalUsers++
+
+		switch user.Role {
+		case RoleAdmin:
+			stats.AdminUsers++
+		default:
+			stats.MemberUsers++
+		}
+
+		switch user.Plan {
+		case PlanDaily:
+			stats.DailyUsers++
+		case PlanWeekly:
+			stats.WeeklyUsers++
+		case PlanMonthly:
+			stats.MonthlyUsers++
+		default:
+			stats.FreeUsers++
+		}
+
+		if user.Plan != PlanFree {
+			if user.PlanExpiresAt == nil || !user.PlanExpiresAt.UTC().Before(now.UTC()) {
+				stats.ActivePaidUsers++
+			}
+		}
+	}
+
+	return stats, nil
+}
+
 func (m *memoryBackend) CreateSession(_ context.Context, session Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

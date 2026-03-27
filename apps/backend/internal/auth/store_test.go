@@ -22,6 +22,7 @@ type fakeBackend struct {
 	updateUserByAdminFn                  func(ctx context.Context, userID string, patch AdminUserPatch, updatedAt time.Time) (User, error)
 	getUserByGoogleSubjectFn             func(ctx context.Context, googleSubject string) (User, error)
 	listUsersFn                          func(ctx context.Context, limit, offset int) ([]User, int, error)
+	getUserStatsFn                       func(ctx context.Context, now time.Time) (UserStats, error)
 	createSessionFn                      func(ctx context.Context, session Session) error
 	getSessionByTokenHashFn              func(ctx context.Context, tokenHash string) (Session, error)
 	touchSessionFn                       func(ctx context.Context, tokenHash string, touchedAt time.Time) error
@@ -98,6 +99,13 @@ func (f *fakeBackend) ListUsers(ctx context.Context, limit int, offset int) ([]U
 		return f.listUsersFn(ctx, limit, offset)
 	}
 	return nil, 0, nil
+}
+
+func (f *fakeBackend) GetUserStats(ctx context.Context, now time.Time) (UserStats, error) {
+	if f.getUserStatsFn != nil {
+		return f.getUserStatsFn(ctx, now)
+	}
+	return UserStats{}, nil
 }
 
 func (f *fakeBackend) CreateSession(ctx context.Context, session Session) error {
@@ -199,6 +207,9 @@ func TestStore_NilSafetyGuards(t *testing.T) {
 	if _, err := s.GetUserByGoogleSubject(ctx, "sub"); err == nil {
 		t.Fatalf("expected error for uninitialized GetUserByGoogleSubject")
 	}
+	if _, err := s.GetUserStats(ctx, time.Now()); err == nil {
+		t.Fatalf("expected error for uninitialized GetUserStats")
+	}
 	if err := s.CreateSession(ctx, Session{}); err == nil {
 		t.Fatalf("expected error for uninitialized CreateSession")
 	}
@@ -229,6 +240,7 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	capturedTouch := time.Time{}
 	capturedRevoke := time.Time{}
 	capturedGoogleSubject := ""
+	capturedStatsNow := time.Time{}
 	capturedIdentity := GoogleIdentity{}
 
 	backend := &fakeBackend{
@@ -280,6 +292,10 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 		getUserByGoogleSubjectFn: func(_ context.Context, googleSubject string) (User, error) {
 			capturedGoogleSubject = googleSubject
 			return User{ID: "usr_google"}, nil
+		},
+		getUserStatsFn: func(_ context.Context, now time.Time) (UserStats, error) {
+			capturedStatsNow = now
+			return UserStats{TotalUsers: 9, ActivePaidUsers: 4}, nil
 		},
 		createSessionFn: func(_ context.Context, session Session) error {
 			if session.TokenHash == "" {
@@ -395,6 +411,18 @@ func TestStore_WrapperForwardingAndNormalization(t *testing.T) {
 	}
 	if capturedGoogleSubject != "sub_abc" {
 		t.Fatalf("expected normalized google subject, got %q", capturedGoogleSubject)
+	}
+
+	statsNow := time.Now().UTC().Truncate(time.Second)
+	stats, err := s.GetUserStats(ctx, statsNow)
+	if err != nil {
+		t.Fatalf("GetUserStats returned error: %v", err)
+	}
+	if capturedStatsNow.IsZero() || !capturedStatsNow.Equal(statsNow) {
+		t.Fatalf("expected stats now forwarding, got %s want %s", capturedStatsNow, statsNow)
+	}
+	if stats.TotalUsers != 9 || stats.ActivePaidUsers != 4 {
+		t.Fatalf("unexpected stats payload: %+v", stats)
 	}
 
 	if err := s.CreateSession(ctx, Session{TokenHash: "abc"}); err != nil {

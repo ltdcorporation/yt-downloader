@@ -515,6 +515,9 @@ func TestService_GuardsAndAdditionalErrorPaths(t *testing.T) {
 	if _, err := nilService.GetUser(ctx, "usr"); err == nil {
 		t.Fatalf("expected nil service get user error")
 	}
+	if _, err := nilService.GetUserStats(ctx); err == nil {
+		t.Fatalf("expected nil service get user stats error")
+	}
 	if _, err := nilService.UpdateUserByAdmin(ctx, "usr_admin", "usr", AdminUpdateUserInput{Role: func() *Role { role := RoleAdmin; return &role }()}); err == nil {
 		t.Fatalf("expected nil service admin update error")
 	}
@@ -652,5 +655,16 @@ func TestService_GetUserAndUpdateUserByAdmin(t *testing.T) {
 
 	if _, err := svc.UpdateUserByAdmin(ctx, adminReg.User.ID, memberReg.User.ID, AdminUpdateUserInput{}); err == nil {
 		t.Fatalf("expected empty patch validation error")
+	}
+
+	stats, err := svc.GetUserStats(ctx)
+	if err != nil {
+		t.Fatalf("GetUserStats failed: %v", err)
+	}
+	if stats.TotalUsers < 2 {
+		t.Fatalf("expected at least 2 users in stats, got %+v", stats)
+	}
+	if stats.AdminUsers < 1 {
+		t.Fatalf("expected at least 1 admin user in stats, got %+v", stats)
 	}
 }

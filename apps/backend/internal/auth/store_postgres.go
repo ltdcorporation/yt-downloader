@@ -434,6 +434,45 @@ func (p *postgresBackend) ListUsers(ctx context.Context, limit, offset int) ([]U
 	return users, total, nil
 }
 
+func (p *postgresBackend) GetUserStats(ctx context.Context, now time.Time) (UserStats, error) {
+	if err := p.ensureSchema(ctx); err != nil {
+		return UserStats{}, err
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	stats := UserStats{}
+	err := p.db.QueryRowContext(
+		ctx,
+		`SELECT
+			COUNT(*)::int AS total_users,
+			COUNT(*) FILTER (WHERE role = 'admin')::int AS admin_users,
+			COUNT(*) FILTER (WHERE role = 'user')::int AS member_users,
+			COUNT(*) FILTER (WHERE plan = 'free')::int AS free_users,
+			COUNT(*) FILTER (WHERE plan = 'daily')::int AS daily_users,
+			COUNT(*) FILTER (WHERE plan = 'weekly')::int AS weekly_users,
+			COUNT(*) FILTER (WHERE plan = 'monthly')::int AS monthly_users,
+			COUNT(*) FILTER (WHERE plan <> 'free' AND (plan_expires_at IS NULL OR plan_expires_at >= $1))::int AS active_paid_users
+		 FROM auth_users`,
+		now.UTC(),
+	).Scan(
+		&stats.TotalUsers,
+		&stats.AdminUsers,
+		&stats.MemberUsers,
+		&stats.FreeUsers,
+		&stats.DailyUsers,
+		&stats.WeeklyUsers,
+		&stats.MonthlyUsers,
+		&stats.ActivePaidUsers,
+	)
+	if err != nil {
+		return UserStats{}, fmt.Errorf("get auth user stats: %w", err)
+	}
+
+	return stats, nil
+}
+
 func (p *postgresBackend) CreateSession(ctx context.Context, session Session) error {
 	if err := p.ensureSchema(ctx); err != nil {
 		return err

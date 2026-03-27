@@ -100,6 +100,27 @@ func TestMemoryBackend_UserAndSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected persisted avatar url, got %q", gotUser.AvatarURL)
 	}
 
+	if err := backend.CreateUser(ctx, User{ID: "usr_2", Email: "free@example.com", FullName: "Free User", Role: RoleUser, Plan: PlanFree, CreatedAt: adminUpdatedAt.Add(time.Minute)}); err != nil {
+		t.Fatalf("CreateUser second user failed: %v", err)
+	}
+
+	stats, err := backend.GetUserStats(ctx, adminUpdatedAt)
+	if err != nil {
+		t.Fatalf("GetUserStats failed: %v", err)
+	}
+	if stats.TotalUsers != 2 {
+		t.Fatalf("expected total users=2, got %d", stats.TotalUsers)
+	}
+	if stats.AdminUsers != 1 || stats.MemberUsers != 1 {
+		t.Fatalf("unexpected role stats: %+v", stats)
+	}
+	if stats.WeeklyUsers != 1 || stats.FreeUsers != 1 {
+		t.Fatalf("unexpected plan stats: %+v", stats)
+	}
+	if stats.ActivePaidUsers != 1 {
+		t.Fatalf("expected active paid users=1, got %d", stats.ActivePaidUsers)
+	}
+
 	session := Session{ID: "ses_1", UserID: user.ID, TokenHash: "hash_1", ExpiresAt: time.Now().Add(time.Hour)}
 	if err := backend.CreateSession(ctx, session); err != nil {
 		t.Fatalf("CreateSession failed: %v", err)

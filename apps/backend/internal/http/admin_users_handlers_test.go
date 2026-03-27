@@ -62,6 +62,30 @@ func TestParseAdminUserPatchRequest(t *testing.T) {
 	})
 }
 
+func TestHandleAdminUsersStats(t *testing.T) {
+	cfg := baseTestConfig()
+	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
+
+	_, _ = registerUserAndGetToken(t, server)
+	_, _ = registerUserAndGetToken(t, server)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/admin/users/stats", nil)
+	req.SetBasicAuth(cfg.AdminBasicAuthUser, cfg.AdminBasicAuthPass)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for admin users stats, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	payload := decodeJSONMap(t, rec.Body.Bytes())
+	stats, ok := payload["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected stats object, got %#v", payload["stats"])
+	}
+	if total, ok := stats["total_users"].(float64); !ok || total < 2 {
+		t.Fatalf("expected total_users >= 2, got %#v", stats["total_users"])
+	}
+}
+
 func TestHandleAdminUserGetAndPatch(t *testing.T) {
 	cfg := baseTestConfig()
 	server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, newFakeJobStore())
