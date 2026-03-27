@@ -214,9 +214,9 @@ func (s *Server) seedDummyUsers() {
 
 	// 4 Free Users
 	freeUsers := []struct {
-		ID       string
-		Name     string
-		Email    string
+		ID    string
+		Name  string
+		Email string
 	}{
 		{"usr_dummy_free1", "Free User 1", "free1@example.com"},
 		{"usr_dummy_free2", "Free User 2", "free2@example.com"},
@@ -226,10 +226,10 @@ func (s *Server) seedDummyUsers() {
 
 	// 6 Subscribed Users
 	subscribedUsers := []struct {
-		ID   string
-		Name string
+		ID    string
+		Name  string
 		Email string
-		Plan auth.Plan
+		Plan  auth.Plan
 	}{
 		{"usr_dummy_daily1", "Daily Subscriber 1", "daily1@example.com", auth.PlanDaily},
 		{"usr_dummy_daily2", "Daily Subscriber 2", "daily2@example.com", auth.PlanDaily},
@@ -555,7 +555,16 @@ func (s *Server) handleCreateMP3Job(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	jobID := chi.URLParam(r, "id")
+	jobID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if jobID == "" {
+		writeError(w, http.StatusBadRequest, "job id is required")
+		return
+	}
+
+	if !s.authorizeJobRead(w, r, jobID) {
+		return
+	}
+
 	record, err := s.jobStore.Get(r.Context(), jobID)
 	if errors.Is(err, jobs.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "job not found")
@@ -568,6 +577,44 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) authorizeJobRead(w http.ResponseWriter, r *http.Request, jobID string) bool {
+	if s == nil || s.historyStore == nil {
+		return true
+	}
+
+	attempt, err := s.historyStore.GetAttemptByJobID(r.Context(), jobID)
+	if err != nil {
+		switch {
+		case errors.Is(err, history.ErrAttemptNotFound):
+			// Job without owned history attempt (anonymous/legacy) stays readable.
+			return true
+		case errors.Is(err, history.ErrInvalidInput):
+			writeError(w, http.StatusBadRequest, "job id is required")
+			return false
+		default:
+			s.logger.Printf("failed to authorize job read job_id=%s err=%v", jobID, err)
+			writeError(w, http.StatusInternalServerError, "failed to authorize job access")
+			return false
+		}
+	}
+
+	ownerUserID := strings.TrimSpace(attempt.UserID)
+	if ownerUserID == "" {
+		return true
+	}
+
+	identity, ok := s.requireSessionIdentity(w, r)
+	if !ok {
+		return false
+	}
+	if strings.TrimSpace(identity.User.ID) != ownerUserID {
+		writeError(w, http.StatusNotFound, "job not found")
+		return false
+	}
+
+	return true
 }
 
 func (s *Server) handleRedirectMP4(w http.ResponseWriter, r *http.Request) {
@@ -913,7 +960,6 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

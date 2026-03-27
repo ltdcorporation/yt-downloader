@@ -575,7 +575,7 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 			updated_at TIMESTAMPTZ NOT NULL,
 			completed_at TIMESTAMPTZ,
 			CONSTRAINT chk_history_attempt_request_kind CHECK (request_kind IN ('mp3','mp4','image')),
-			CONSTRAINT chk_history_attempt_status CHECK (status IN ('queued','processing','done','failed','expired')),
+			CONSTRAINT chk_history_attempt_status CHECK (status IN ('resolved','queued','processing','done','failed','expired')),
 			CONSTRAINT fk_history_attempt_item_user FOREIGN KEY (history_item_id, user_id)
 				REFERENCES history_items(id, user_id)
 				ON DELETE CASCADE
@@ -591,6 +591,17 @@ func (p *postgresBackend) ensureSchema(ctx context.Context) error {
 		if _, err := p.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("ensure history schema: %w", err)
 		}
+	}
+
+	if _, err := p.db.ExecContext(ctx, `ALTER TABLE history_attempts DROP CONSTRAINT IF EXISTS chk_history_attempt_status`); err != nil {
+		return fmt.Errorf("ensure history schema: %w", err)
+	}
+	if _, err := p.db.ExecContext(ctx, `
+		ALTER TABLE history_attempts
+		ADD CONSTRAINT chk_history_attempt_status
+		CHECK (status IN ('resolved','queued','processing','done','failed','expired'))
+	`); err != nil {
+		return fmt.Errorf("ensure history schema: %w", err)
 	}
 
 	p.schemaReady = true

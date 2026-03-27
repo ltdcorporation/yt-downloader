@@ -17,6 +17,7 @@ import (
 	"github.com/hibiken/asynq"
 
 	"yt-downloader/backend/internal/config"
+	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
 	queuepkg "yt-downloader/backend/internal/queue"
@@ -1046,6 +1047,153 @@ func TestHandleGetJob(t *testing.T) {
 		}
 		payload := decodeJSONMap(t, rec.Body.Bytes())
 		if payload["id"] != "job_ok" {
+			t.Fatalf("unexpected payload: %#v", payload)
+		}
+	})
+
+	t.Run("owned job requires valid session", func(t *testing.T) {
+		cfg := baseTestConfig()
+		store := newFakeJobStore()
+		store.records["job_owned"] = jobs.Record{ID: "job_owned", Status: jobs.StatusProcessing, OutputKind: "mp3"}
+		server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, store)
+
+		_, ownerID := registerUserAndGetToken(t, server)
+		now := time.Now().UTC().Truncate(time.Microsecond)
+
+		item, err := server.historyStore.UpsertItem(context.Background(), history.Item{
+			ID:            "his_owned_job_1",
+			UserID:        ownerID,
+			Platform:      history.PlatformYouTube,
+			SourceURL:     "https://www.youtube.com/watch?v=owned",
+			SourceURLHash: "hash_owned_job_1",
+			Title:         "Owned Job",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history item upsert error: %v", err)
+		}
+		_, err = server.historyStore.CreateAttempt(context.Background(), history.Attempt{
+			ID:            "hat_owned_job_1",
+			HistoryItemID: item.ID,
+			UserID:        ownerID,
+			RequestKind:   history.RequestKindMP3,
+			Status:        history.StatusQueued,
+			JobID:         "job_owned",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history attempt create error: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/jobs/job_owned", nil)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["code"] != "invalid_session" {
+			t.Fatalf("expected invalid_session code, got %#v", payload["code"])
+		}
+	})
+
+	t.Run("owned job hidden from non-owner", func(t *testing.T) {
+		cfg := baseTestConfig()
+		store := newFakeJobStore()
+		store.records["job_owned_hidden"] = jobs.Record{ID: "job_owned_hidden", Status: jobs.StatusProcessing, OutputKind: "mp3"}
+		server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, store)
+
+		ownerToken, ownerID := registerUserAndGetToken(t, server)
+		_ = ownerToken
+		otherToken, _ := registerUserAndGetToken(t, server)
+		now := time.Now().UTC().Truncate(time.Microsecond)
+
+		item, err := server.historyStore.UpsertItem(context.Background(), history.Item{
+			ID:            "his_owned_job_2",
+			UserID:        ownerID,
+			Platform:      history.PlatformYouTube,
+			SourceURL:     "https://www.youtube.com/watch?v=owned2",
+			SourceURLHash: "hash_owned_job_2",
+			Title:         "Owned Job 2",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history item upsert error: %v", err)
+		}
+		_, err = server.historyStore.CreateAttempt(context.Background(), history.Attempt{
+			ID:            "hat_owned_job_2",
+			HistoryItemID: item.ID,
+			UserID:        ownerID,
+			RequestKind:   history.RequestKindMP3,
+			Status:        history.StatusQueued,
+			JobID:         "job_owned_hidden",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history attempt create error: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/jobs/job_owned_hidden", nil)
+		req.Header.Set("Authorization", "Bearer "+otherToken)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("owned job accessible to owner", func(t *testing.T) {
+		cfg := baseTestConfig()
+		store := newFakeJobStore()
+		store.records["job_owned_ok"] = jobs.Record{ID: "job_owned_ok", Status: jobs.StatusDone, OutputKind: "mp3"}
+		server := newTestServer(t, cfg, &fakeResolver{}, &fakeQueue{}, store)
+
+		ownerToken, ownerID := registerUserAndGetToken(t, server)
+		now := time.Now().UTC().Truncate(time.Microsecond)
+
+		item, err := server.historyStore.UpsertItem(context.Background(), history.Item{
+			ID:            "his_owned_job_3",
+			UserID:        ownerID,
+			Platform:      history.PlatformYouTube,
+			SourceURL:     "https://www.youtube.com/watch?v=owned3",
+			SourceURLHash: "hash_owned_job_3",
+			Title:         "Owned Job 3",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history item upsert error: %v", err)
+		}
+		_, err = server.historyStore.CreateAttempt(context.Background(), history.Attempt{
+			ID:            "hat_owned_job_3",
+			HistoryItemID: item.ID,
+			UserID:        ownerID,
+			RequestKind:   history.RequestKindMP3,
+			Status:        history.StatusQueued,
+			JobID:         "job_owned_ok",
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		})
+		if err != nil {
+			t.Fatalf("unexpected history attempt create error: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/jobs/job_owned_ok", nil)
+		req.Header.Set("Authorization", "Bearer "+ownerToken)
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+		}
+		payload := decodeJSONMap(t, rec.Body.Bytes())
+		if payload["id"] != "job_owned_ok" {
 			t.Fatalf("unexpected payload: %#v", payload)
 		}
 	})
