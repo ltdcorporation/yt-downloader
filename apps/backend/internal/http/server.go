@@ -22,10 +22,12 @@ import (
 
 	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/avatar"
+	"yt-downloader/backend/internal/billing"
 	"yt-downloader/backend/internal/config"
 	"yt-downloader/backend/internal/history"
 	"yt-downloader/backend/internal/igresolver"
 	"yt-downloader/backend/internal/jobs"
+	"yt-downloader/backend/internal/maintenance"
 	"yt-downloader/backend/internal/settings"
 	"yt-downloader/backend/internal/storage"
 	"yt-downloader/backend/internal/ttresolver"
@@ -63,22 +65,26 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg             config.Config
-	logger          *log.Logger
-	resolver        youtubeResolver
-	xResolver       xMediaResolver
-	igResolver      igMediaResolver
-	ttResolver      ttMediaResolver
-	queue           taskQueue
-	jobStore        jobStore
-	authStore       *auth.Store
-	historyStore    *history.Store
-	settingsStore   *settings.Store
-	authService     *auth.Service
-	settingsService *settings.Service
-	avatarService   *avatar.Service
-	origins         map[string]struct{}
-	limiter         *ipRateLimiter
+	cfg                config.Config
+	logger             *log.Logger
+	resolver           youtubeResolver
+	xResolver          xMediaResolver
+	igResolver         igMediaResolver
+	ttResolver         ttMediaResolver
+	queue              taskQueue
+	jobStore           jobStore
+	authStore          *auth.Store
+	historyStore       *history.Store
+	settingsStore      *settings.Store
+	maintenanceStore   *maintenance.Store
+	billingStore       *billing.Store
+	authService        *auth.Service
+	settingsService    *settings.Service
+	maintenanceService *maintenance.Service
+	billingService     *billing.Service
+	avatarService      *avatar.Service
+	origins            map[string]struct{}
+	limiter            *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
@@ -153,6 +159,8 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	authStore := auth.NewStore(cfg, logger)
 	historyStore := history.NewStore(cfg, logger)
 	settingsStore := settings.NewStore(cfg, logger)
+	maintenanceStore := maintenance.NewStore(cfg, logger)
+	billingStore := billing.NewStore(cfg, logger)
 	googleVerifier := auth.NewGoogleTokenVerifier(auth.GoogleTokenVerifierOptions{
 		ClientIDs: splitCommaSeparated(cfg.GoogleClientIDs),
 	})
@@ -163,6 +171,8 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		GoogleTokenVerifier: googleVerifier,
 	})
 	settingsService := settings.NewService(settingsStore)
+	maintenanceService := maintenance.NewService(maintenanceStore)
+	billingService := billing.NewService(billingStore)
 
 	var avatarService *avatar.Service
 	r2Client, r2Err := storage.NewR2Client(context.Background(), cfg)
@@ -181,22 +191,26 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 
 	server := &Server{
-		cfg:             cfg,
-		logger:          logger,
-		resolver:        resolver,
-		xResolver:       xResolver,
-		igResolver:      igResolver,
-		ttResolver:      ttResolver,
-		queue:           queue,
-		jobStore:        store,
-		authStore:       authStore,
-		historyStore:    historyStore,
-		settingsStore:   settingsStore,
-		authService:     authService,
-		settingsService: settingsService,
-		avatarService:   avatarService,
-		origins:         parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:         newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:                cfg,
+		logger:             logger,
+		resolver:           resolver,
+		xResolver:          xResolver,
+		igResolver:         igResolver,
+		ttResolver:         ttResolver,
+		queue:              queue,
+		jobStore:           store,
+		authStore:          authStore,
+		historyStore:       historyStore,
+		settingsStore:      settingsStore,
+		maintenanceStore:   maintenanceStore,
+		billingStore:       billingStore,
+		authService:        authService,
+		settingsService:    settingsService,
+		maintenanceService: maintenanceService,
+		billingService:     billingService,
+		avatarService:      avatarService,
+		origins:            parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:            newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 
 	server.seedDummyUsers()
@@ -296,6 +310,16 @@ func (s *Server) Close() {
 			s.logger.Printf("warning: close settings store: %v", err)
 		}
 	}
+	if s.maintenanceStore != nil {
+		if err := s.maintenanceStore.Close(); err != nil {
+			s.logger.Printf("warning: close maintenance store: %v", err)
+		}
+	}
+	if s.billingStore != nil {
+		if err := s.billingStore.Close(); err != nil {
+			s.logger.Printf("warning: close billing store: %v", err)
+		}
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -305,8 +329,11 @@ func (s *Server) Handler() http.Handler {
 	if s.limiter != nil {
 		r.Use(s.rateLimitMiddleware)
 	}
+	r.Use(s.maintenanceGuardMiddleware)
 
 	r.Get("/healthz", s.handleHealthz)
+	r.Get("/v1/maintenance", s.handleMaintenancePublicGet)
+
 	r.Post("/v1/auth/register", s.handleAuthRegister)
 	r.Post("/v1/auth/login", s.handleAuthLogin)
 	r.Post("/v1/auth/google", s.handleAuthGoogleLogin)
@@ -318,6 +345,14 @@ func (s *Server) Handler() http.Handler {
 	r.Delete("/v1/profile/avatar", s.handleProfileAvatarDelete)
 	r.Get("/v1/settings", s.handleSettingsGet)
 	r.Patch("/v1/settings", s.handleSettingsPatch)
+	// Subscription & billing
+	r.Get("/v1/subscription", s.handleSubscriptionGet)
+	r.Patch("/v1/subscription", s.handleSubscriptionPatch)
+	r.Post("/v1/subscription/cancel", s.handleSubscriptionCancel)
+	r.Post("/v1/subscription/reactivate", s.handleSubscriptionReactivate)
+	r.Get("/v1/billing/history", s.handleBillingHistoryList)
+	r.Get("/v1/billing/invoices/{id}", s.handleBillingInvoiceGet)
+	r.Get("/v1/billing/invoices/{id}/receipt", s.handleBillingInvoiceReceipt)
 	r.Get("/v1/history", s.handleHistoryList)
 	r.Post("/v1/history", s.handleHistoryCreate)
 	r.Get("/v1/history/stats", s.handleHistoryStats)
@@ -341,6 +376,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/users", s.handleAdminUsersList)
 		r.Get("/users/{id}", s.handleAdminUserGet)
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
+		r.Get("/maintenance", s.handleAdminMaintenanceGet)
+		r.Patch("/maintenance", s.handleAdminMaintenancePatch)
 	})
 
 	r.Route("/v1/admin", func(r chi.Router) {
@@ -348,6 +385,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/users", s.handleAdminUsersList)
 		r.Get("/users/{id}", s.handleAdminUserGet)
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
+		r.Get("/maintenance", s.handleAdminMaintenanceGet)
+		r.Patch("/maintenance", s.handleAdminMaintenancePatch)
 	})
 
 	return r
