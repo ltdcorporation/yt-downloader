@@ -20,6 +20,7 @@ import (
 	"github.com/hibiken/asynq"
 	"golang.org/x/time/rate"
 
+	"yt-downloader/backend/internal/adminsettings"
 	"yt-downloader/backend/internal/auth"
 	"yt-downloader/backend/internal/avatar"
 	"yt-downloader/backend/internal/billing"
@@ -65,26 +66,28 @@ type jobStore interface {
 }
 
 type Server struct {
-	cfg                config.Config
-	logger             *log.Logger
-	resolver           youtubeResolver
-	xResolver          xMediaResolver
-	igResolver         igMediaResolver
-	ttResolver         ttMediaResolver
-	queue              taskQueue
-	jobStore           jobStore
-	authStore          *auth.Store
-	historyStore       *history.Store
-	settingsStore      *settings.Store
-	maintenanceStore   *maintenance.Store
-	billingStore       *billing.Store
-	authService        *auth.Service
-	settingsService    *settings.Service
-	maintenanceService *maintenance.Service
-	billingService     *billing.Service
-	avatarService      *avatar.Service
-	origins            map[string]struct{}
-	limiter            *ipRateLimiter
+	cfg                  config.Config
+	logger               *log.Logger
+	resolver             youtubeResolver
+	xResolver            xMediaResolver
+	igResolver           igMediaResolver
+	ttResolver           ttMediaResolver
+	queue                taskQueue
+	jobStore             jobStore
+	authStore            *auth.Store
+	historyStore         *history.Store
+	settingsStore        *settings.Store
+	adminSettingsStore   *adminsettings.Store
+	maintenanceStore     *maintenance.Store
+	billingStore         *billing.Store
+	authService          *auth.Service
+	settingsService      *settings.Service
+	adminSettingsService *adminsettings.Service
+	maintenanceService   *maintenance.Service
+	billingService       *billing.Service
+	avatarService        *avatar.Service
+	origins              map[string]struct{}
+	limiter              *ipRateLimiter
 }
 
 func NewServer(cfg config.Config, logger *log.Logger, resolver youtubeResolver) *Server {
@@ -159,6 +162,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	authStore := auth.NewStore(cfg, logger)
 	historyStore := history.NewStore(cfg, logger)
 	settingsStore := settings.NewStore(cfg, logger)
+	adminSettingsStore := adminsettings.NewStore(cfg, logger)
 	maintenanceStore := maintenance.NewStore(cfg, logger)
 	billingStore := billing.NewStore(cfg, logger)
 	googleVerifier := auth.NewGoogleTokenVerifier(auth.GoogleTokenVerifierOptions{
@@ -171,6 +175,7 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 		GoogleTokenVerifier: googleVerifier,
 	})
 	settingsService := settings.NewService(settingsStore)
+	adminSettingsService := adminsettings.NewService(adminSettingsStore)
 	maintenanceService := maintenance.NewService(maintenanceStore)
 	billingService := billing.NewService(billingStore)
 
@@ -191,26 +196,28 @@ func newServerWithDeps(cfg config.Config, logger *log.Logger, resolver youtubeRe
 	}
 
 	server := &Server{
-		cfg:                cfg,
-		logger:             logger,
-		resolver:           resolver,
-		xResolver:          xResolver,
-		igResolver:         igResolver,
-		ttResolver:         ttResolver,
-		queue:              queue,
-		jobStore:           store,
-		authStore:          authStore,
-		historyStore:       historyStore,
-		settingsStore:      settingsStore,
-		maintenanceStore:   maintenanceStore,
-		billingStore:       billingStore,
-		authService:        authService,
-		settingsService:    settingsService,
-		maintenanceService: maintenanceService,
-		billingService:     billingService,
-		avatarService:      avatarService,
-		origins:            parseAllowedOrigins(cfg.CORSAllowedOrigins),
-		limiter:            newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
+		cfg:                  cfg,
+		logger:               logger,
+		resolver:             resolver,
+		xResolver:            xResolver,
+		igResolver:           igResolver,
+		ttResolver:           ttResolver,
+		queue:                queue,
+		jobStore:             store,
+		authStore:            authStore,
+		historyStore:         historyStore,
+		settingsStore:        settingsStore,
+		adminSettingsStore:   adminSettingsStore,
+		maintenanceStore:     maintenanceStore,
+		billingStore:         billingStore,
+		authService:          authService,
+		settingsService:      settingsService,
+		adminSettingsService: adminSettingsService,
+		maintenanceService:   maintenanceService,
+		billingService:       billingService,
+		avatarService:        avatarService,
+		origins:              parseAllowedOrigins(cfg.CORSAllowedOrigins),
+		limiter:              newIPRateLimiter(rate.Limit(cfg.RateLimitRPS), burst),
 	}
 
 	server.seedDummyUsers()
@@ -310,6 +317,11 @@ func (s *Server) Close() {
 			s.logger.Printf("warning: close settings store: %v", err)
 		}
 	}
+	if s.adminSettingsStore != nil {
+		if err := s.adminSettingsStore.Close(); err != nil {
+			s.logger.Printf("warning: close admin settings store: %v", err)
+		}
+	}
 	if s.maintenanceStore != nil {
 		if err := s.maintenanceStore.Close(); err != nil {
 			s.logger.Printf("warning: close maintenance store: %v", err)
@@ -379,6 +391,8 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
 		r.Get("/maintenance", s.handleAdminMaintenanceGet)
 		r.Patch("/maintenance", s.handleAdminMaintenancePatch)
+		r.Get("/settings", s.handleAdminSettingsGet)
+		r.Patch("/settings", s.handleAdminSettingsPatch)
 	})
 
 	r.Route("/v1/admin", func(r chi.Router) {
@@ -389,6 +403,8 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/users/{id}", s.handleAdminUserPatch)
 		r.Get("/maintenance", s.handleAdminMaintenanceGet)
 		r.Patch("/maintenance", s.handleAdminMaintenancePatch)
+		r.Get("/settings", s.handleAdminSettingsGet)
+		r.Patch("/settings", s.handleAdminSettingsPatch)
 	})
 
 	return r

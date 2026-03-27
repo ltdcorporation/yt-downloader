@@ -213,6 +213,48 @@ export interface SettingsPatchRequest {
   };
 }
 
+export interface AdminSettingsSnapshotResponse {
+  settings: {
+    preferences: {
+      default_quality: SettingsQuality;
+      auto_trim_silence: boolean;
+      thumbnail_generation: boolean;
+    };
+    notifications: {
+      email: {
+        processing: boolean;
+        storage: boolean;
+        summary: boolean;
+      };
+    };
+  };
+  meta: {
+    version: number;
+    updated_at: string;
+    updated_by_user_id?: string;
+  };
+}
+
+export interface AdminSettingsPatchRequest {
+  settings: {
+    preferences?: {
+      default_quality?: SettingsQuality;
+      auto_trim_silence?: boolean;
+      thumbnail_generation?: boolean;
+    };
+    notifications?: {
+      email?: {
+        processing?: boolean;
+        storage?: boolean;
+        summary?: boolean;
+      };
+    };
+  };
+  meta: {
+    version: number;
+  };
+}
+
 export type MaintenanceServiceKey =
   | "api_gateway"
   | "primary_database"
@@ -545,6 +587,15 @@ export const api = {
 
   updateSettings: (payload: SettingsPatchRequest) =>
     fetcher<SettingsSnapshotResponse>("/v1/settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  getAdminSettings: () =>
+    fetcher<AdminSettingsSnapshotResponse>("/v1/admin/settings"),
+
+  updateAdminSettings: (payload: AdminSettingsPatchRequest) =>
+    fetcher<AdminSettingsSnapshotResponse>("/v1/admin/settings", {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

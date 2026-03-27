@@ -6,20 +6,24 @@ import { useAuthStore } from "@/store";
 import {
   api,
   APIError,
+  type AdminSettingsPatchRequest,
+  type AdminSettingsSnapshotResponse,
 } from "@/lib/api";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import SettingsProfile from "@/components/settings/SettingsProfile";
+import SettingsPreferences from "@/components/settings/SettingsPreferences";
+import SettingsNotifications from "@/components/settings/SettingsNotifications";
 import {
   DEFAULT_AVATAR_URL,
+  buildDefaultSettingsFormData,
+  fromNotificationPreferences,
+  toNotificationPreferences,
+  type EmailAlertSettings,
+  type SettingsFormData,
   type UserProfile,
 } from "@/data/settings-data";
-import {
-  Layout,
-  Users,
-  Gear,
-  Wrench,
-} from "@phosphor-icons/react";
+import { Layout, Users, Gear, Wrench } from "@phosphor-icons/react";
 
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set([
@@ -30,12 +34,122 @@ const ALLOWED_AVATAR_TYPES = new Set([
   "image/webp",
 ]);
 
+interface AdminSettingsSnapshotState {
+  version: number;
+  updatedAt: string;
+  updatedByUserID: string;
+  defaultQuality: SettingsFormData["defaultQuality"];
+  autoTrimSilence: boolean;
+  thumbnailGeneration: boolean;
+  emailAlerts: EmailAlertSettings;
+}
+
 interface ServerSnapshot {
   profile: {
     fullName: string;
     email: string;
     avatarURL: string;
   };
+  settings: AdminSettingsSnapshotState;
+}
+
+function mapAdminSettingsSnapshot(
+  snapshot: AdminSettingsSnapshotResponse,
+): AdminSettingsSnapshotState {
+  return {
+    version: snapshot.meta.version,
+    updatedAt: snapshot.meta.updated_at,
+    updatedByUserID: snapshot.meta.updated_by_user_id || "",
+    defaultQuality: snapshot.settings.preferences.default_quality,
+    autoTrimSilence: snapshot.settings.preferences.auto_trim_silence,
+    thumbnailGeneration: snapshot.settings.preferences.thumbnail_generation,
+    emailAlerts: {
+      processing: snapshot.settings.notifications.email.processing,
+      storage: snapshot.settings.notifications.email.storage,
+      summary: snapshot.settings.notifications.email.summary,
+    },
+  };
+}
+
+function mapSnapshotSettingsToForm(
+  snapshot: AdminSettingsSnapshotState,
+): SettingsFormData {
+  return {
+    defaultQuality: snapshot.defaultQuality,
+    autoTrimSilence: snapshot.autoTrimSilence,
+    thumbnailGeneration: snapshot.thumbnailGeneration,
+    emailAlerts: toNotificationPreferences(snapshot.emailAlerts),
+  };
+}
+
+function buildAdminSettingsPatch(
+  baseline: AdminSettingsSnapshotState,
+  formData: SettingsFormData,
+): AdminSettingsPatchRequest["settings"] | null {
+  const patch: AdminSettingsPatchRequest["settings"] = {};
+
+  const preferences: NonNullable<AdminSettingsPatchRequest["settings"]["preferences"]> =
+    {};
+
+  if (formData.defaultQuality !== baseline.defaultQuality) {
+    preferences.default_quality = formData.defaultQuality;
+  }
+  if (formData.autoTrimSilence !== baseline.autoTrimSilence) {
+    preferences.auto_trim_silence = formData.autoTrimSilence;
+  }
+  if (formData.thumbnailGeneration !== baseline.thumbnailGeneration) {
+    preferences.thumbnail_generation = formData.thumbnailGeneration;
+  }
+
+  if (Object.keys(preferences).length > 0) {
+    patch.preferences = preferences;
+  }
+
+  const nextEmailAlerts = fromNotificationPreferences(formData.emailAlerts);
+  const notificationsEmail: NonNullable<
+    NonNullable<AdminSettingsPatchRequest["settings"]["notifications"]>["email"]
+  > = {};
+
+  if (nextEmailAlerts.processing !== baseline.emailAlerts.processing) {
+    notificationsEmail.processing = nextEmailAlerts.processing;
+  }
+  if (nextEmailAlerts.storage !== baseline.emailAlerts.storage) {
+    notificationsEmail.storage = nextEmailAlerts.storage;
+  }
+  if (nextEmailAlerts.summary !== baseline.emailAlerts.summary) {
+    notificationsEmail.summary = nextEmailAlerts.summary;
+  }
+
+  if (Object.keys(notificationsEmail).length > 0) {
+    patch.notifications = {
+      email: notificationsEmail,
+    };
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return null;
+  }
+
+  return patch;
+}
+
+function formatUpdatedAt(value: string): string {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function AdminSettingsPage() {
@@ -52,6 +166,9 @@ export default function AdminSettingsPage() {
   const [profileFullName, setProfileFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
   const [profileAvatarURL, setProfileAvatarURL] = useState("");
+  const [formData, setFormData] = useState<SettingsFormData>(
+    buildDefaultSettingsFormData(),
+  );
   const [serverSnapshot, setServerSnapshot] = useState<ServerSnapshot | null>(
     null,
   );
@@ -62,14 +179,20 @@ export default function AdminSettingsPage() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
+  const [conflictNotice, setConflictNotice] = useState("");
 
   const isDirty = useMemo(() => {
     if (!serverSnapshot) {
       return false;
     }
 
-    return profileFullName !== serverSnapshot.profile.fullName;
-  }, [profileFullName, serverSnapshot]);
+    const settingsPatch = buildAdminSettingsPatch(serverSnapshot.settings, formData);
+
+    return (
+      profileFullName !== serverSnapshot.profile.fullName ||
+      settingsPatch !== null
+    );
+  }, [formData, profileFullName, serverSnapshot]);
 
   const refreshAuthState = useCallback(async () => {
     try {
@@ -77,7 +200,7 @@ export default function AdminSettingsPage() {
       setCurrentUser(me.user);
     } catch (error) {
       if (error instanceof APIError && error.code === "invalid_session") {
-        // Session snapshot cleanup
+        // session invalid; clear auth snapshot below
       }
       setCurrentUser(null);
     } finally {
@@ -100,19 +223,25 @@ export default function AdminSettingsPage() {
     setLoadError("");
 
     try {
-      const profileResponse = await api.profile();
+      const [profileResponse, adminSettingsResponse] = await Promise.all([
+        api.profile(),
+        api.getAdminSettings(),
+      ]);
 
+      const settingsSnapshot = mapAdminSettingsSnapshot(adminSettingsResponse);
       const nextSnapshot: ServerSnapshot = {
         profile: {
           fullName: profileResponse.profile.full_name,
           email: profileResponse.profile.email,
           avatarURL: profileResponse.profile.avatar_url || "",
         },
+        settings: settingsSnapshot,
       };
 
       setProfileFullName(nextSnapshot.profile.fullName);
       setProfileEmail(nextSnapshot.profile.email);
       setProfileAvatarURL(nextSnapshot.profile.avatarURL);
+      setFormData(mapSnapshotSettingsToForm(settingsSnapshot));
       setServerSnapshot(nextSnapshot);
     } catch (error) {
       if (
@@ -127,7 +256,7 @@ export default function AdminSettingsPage() {
       setLoadError(
         error instanceof Error
           ? error.message
-          : "Failed to load profile. Please refresh and try again.",
+          : "Failed to load settings. Please refresh and try again.",
       );
     } finally {
       setIsPageLoading(false);
@@ -135,13 +264,16 @@ export default function AdminSettingsPage() {
   }, [currentUser, router, setCurrentUser]);
 
   useEffect(() => {
-    if (!isAuthChecking) {
-      if (!currentUser || currentUser.role !== "admin") {
-        router.push("/");
-        return;
-      }
-      void loadSettings();
+    if (isAuthChecking) {
+      return;
     }
+
+    if (!currentUser || currentUser.role !== "admin") {
+      router.push("/");
+      return;
+    }
+
+    void loadSettings();
   }, [currentUser, isAuthChecking, loadSettings, router]);
 
   useEffect(() => {
@@ -160,6 +292,39 @@ export default function AdminSettingsPage() {
     };
   }, [isDirty]);
 
+  const handleQualityChange = (value: SettingsFormData["defaultQuality"]) => {
+    setFormData((prev) => ({ ...prev, defaultQuality: value }));
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+  };
+
+  const handleAutoTrimChange = (value: boolean) => {
+    setFormData((prev) => ({ ...prev, autoTrimSilence: value }));
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+  };
+
+  const handleThumbnailChange = (value: boolean) => {
+    setFormData((prev) => ({ ...prev, thumbnailGeneration: value }));
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+  };
+
+  const handleAlertChange = (id: string, checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      emailAlerts: prev.emailAlerts.map((alert) =>
+        alert.id === id ? { ...alert, checked } : alert,
+      ),
+    }));
+    setSaveError("");
+    setSaveSuccess("");
+    setConflictNotice("");
+  };
+
   const handleDiscard = () => {
     if (!serverSnapshot) {
       return;
@@ -168,8 +333,10 @@ export default function AdminSettingsPage() {
     setProfileFullName(serverSnapshot.profile.fullName);
     setProfileEmail(serverSnapshot.profile.email);
     setProfileAvatarURL(serverSnapshot.profile.avatarURL);
+    setFormData(mapSnapshotSettingsToForm(serverSnapshot.settings));
     setSaveError("");
     setSaveSuccess("");
+    setConflictNotice("");
   };
 
   const handleSave = async () => {
@@ -180,41 +347,79 @@ export default function AdminSettingsPage() {
     setIsSaving(true);
     setSaveError("");
     setSaveSuccess("");
+    setConflictNotice("");
 
     try {
-      let finalFullName = profileFullName;
-      let finalEmail = profileEmail;
-      let finalAvatarURL = profileAvatarURL;
+      let finalProfile = { ...serverSnapshot.profile };
 
       if (profileFullName !== serverSnapshot.profile.fullName) {
         const profileResponse = await api.updateProfile({
           fullName: profileFullName,
         });
-        finalFullName = profileResponse.profile.full_name;
-        finalEmail = profileResponse.profile.email;
-        finalAvatarURL = profileResponse.profile.avatar_url || "";
+        finalProfile = {
+          fullName: profileResponse.profile.full_name,
+          email: profileResponse.profile.email,
+          avatarURL: profileResponse.profile.avatar_url || "",
+        };
         setCurrentUser(profileResponse.profile);
       }
 
+      const settingsPatch = buildAdminSettingsPatch(serverSnapshot.settings, formData);
+      let nextSettingsSnapshot = serverSnapshot.settings;
+
+      if (settingsPatch) {
+        const settingsResponse = await api.updateAdminSettings({
+          settings: settingsPatch,
+          meta: {
+            version: serverSnapshot.settings.version,
+          },
+        });
+        nextSettingsSnapshot = mapAdminSettingsSnapshot(settingsResponse);
+      }
+
       const nextSnapshot: ServerSnapshot = {
-        profile: {
-          fullName: finalFullName,
-          email: finalEmail,
-          avatarURL: finalAvatarURL,
-        },
+        profile: finalProfile,
+        settings: nextSettingsSnapshot,
       };
 
-      setProfileFullName(finalFullName);
-      setProfileEmail(finalEmail);
-      setProfileAvatarURL(finalAvatarURL);
+      setProfileFullName(finalProfile.fullName);
+      setProfileEmail(finalProfile.email);
+      setProfileAvatarURL(finalProfile.avatarURL);
+      setFormData(mapSnapshotSettingsToForm(nextSettingsSnapshot));
       setServerSnapshot(nextSnapshot);
-      setSaveSuccess("Profile updated successfully.");
+      setSaveSuccess("Admin settings updated successfully.");
     } catch (error) {
-      setSaveError(
-        error instanceof Error
-          ? error.message
-          : "Failed to save profile. Please try again.",
-      );
+      if (
+        error instanceof APIError &&
+        error.code === "admin_settings_version_conflict"
+      ) {
+        try {
+          const latest = await api.getAdminSettings();
+          const latestSnapshot = mapAdminSettingsSnapshot(latest);
+          setServerSnapshot((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  settings: latestSnapshot,
+                }
+              : prev,
+          );
+          setFormData(mapSnapshotSettingsToForm(latestSnapshot));
+          setConflictNotice(
+            "Settings were changed elsewhere. Latest version has been loaded.",
+          );
+        } catch {
+          setConflictNotice(
+            "Settings changed elsewhere. Please refresh and try again.",
+          );
+        }
+      } else {
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "Failed to save settings. Please try again.",
+        );
+      }
     } finally {
       setIsSaving(false);
     }
@@ -238,6 +443,7 @@ export default function AdminSettingsPage() {
     setIsAvatarMutating(true);
     setSaveError("");
     setSaveSuccess("");
+    setConflictNotice("");
 
     try {
       const profileResponse = await api.uploadProfileAvatar(file);
@@ -278,6 +484,7 @@ export default function AdminSettingsPage() {
     setIsAvatarMutating(true);
     setSaveError("");
     setSaveSuccess("");
+    setConflictNotice("");
 
     try {
       const profileResponse = await api.removeProfileAvatar();
@@ -392,13 +599,28 @@ export default function AdminSettingsPage() {
               Admin Settings
             </h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium">
-              Manage your administrator profile and account details.
+              Manage administrator profile and global application defaults.
             </p>
+            {serverSnapshot ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
+                Settings version {serverSnapshot.settings.version} · last updated{" "}
+                {formatUpdatedAt(serverSnapshot.settings.updatedAt) || "just now"}
+                {serverSnapshot.settings.updatedByUserID
+                  ? ` by ${serverSnapshot.settings.updatedByUserID}`
+                  : ""}
+              </p>
+            ) : null}
           </div>
 
           {loadError ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
               {loadError}
+            </div>
+          ) : null}
+
+          {conflictNotice ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              {conflictNotice}
             </div>
           ) : null}
 
@@ -424,6 +646,21 @@ export default function AdminSettingsPage() {
             avatarBusy={isAvatarMutating}
             emailReadOnly
           />
+
+          <SettingsPreferences
+            defaultQuality={formData.defaultQuality}
+            autoTrimSilence={formData.autoTrimSilence}
+            thumbnailGeneration={formData.thumbnailGeneration}
+            onQualityChange={handleQualityChange}
+            onAutoTrimChange={handleAutoTrimChange}
+            onThumbnailChange={handleThumbnailChange}
+          />
+
+          <SettingsNotifications
+            emailAlerts={formData.emailAlerts}
+            onAlertChange={handleAlertChange}
+          />
+
           <div className="flex items-center justify-end gap-3 pt-4">
             <button
               onClick={handleDiscard}
