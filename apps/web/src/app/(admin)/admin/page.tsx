@@ -11,6 +11,7 @@ import {
   type AuthUser,
   type MaintenanceServiceItem,
 } from "@/lib/api";
+import { persistAdminAuth } from "@/lib/auth-session";
 import SettingsSidebar from "@/components/settings/SettingsSidebar";
 import SettingsHeader from "@/components/settings/SettingsHeader";
 import { DEFAULT_AVATAR_URL } from "@/data/settings-data";
@@ -131,6 +132,10 @@ export default function AdminDashboardPage() {
 
   const [isPageLoading, setIsPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginForm, setLoginForm] = useState({ user: "", pass: "" });
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   const [stats, setStats] = useState<AdminUsersStats | null>(null);
@@ -187,12 +192,35 @@ export default function AdminDashboardPage() {
     }
 
     if (!currentUser || currentUser.role !== "admin") {
-      router.push("/");
+      setShowLoginModal(true);
+      setIsPageLoading(false);
       return;
     }
 
+    setShowLoginModal(false);
     void loadDashboard();
-  }, [currentUser, isAuthChecking, loadDashboard, router]);
+  }, [currentUser, isAuthChecking, loadDashboard]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setIsLoggingIn(true);
+
+    try {
+      const res = await api.loginAdmin(loginForm.user, loginForm.pass);
+      const credentialsBase64 = btoa(`${loginForm.user}:${loginForm.pass}`);
+      persistAdminAuth(res.user, credentialsBase64);
+      setCurrentUser(res.user);
+      setShowLoginModal(false);
+      setIsPageLoading(true);
+    } catch (error) {
+      setLoginError(
+        error instanceof Error ? error.message : "Invalid credentials",
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -279,10 +307,89 @@ export default function AdminDashboardPage() {
     return planDistribution(stats);
   }, [stats]);
 
-  if (isAuthChecking || isPageLoading) {
+  if (isAuthChecking || (isPageLoading && !showLoginModal)) {
     return (
       <div className="flex h-screen items-center justify-center bg-background-light dark:bg-background-dark">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
+  if (showLoginModal) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50 p-4 dark:bg-slate-950">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+          <div className="mb-8 text-center">
+            <div className="mb-4 inline-flex size-14 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <SealCheck size={32} weight="fill" />
+            </div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-slate-50">
+              Admin Access
+            </h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Please enter your system credentials
+            </p>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="space-y-4">
+            <div>
+              <label className="ml-1 mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Username
+              </label>
+              <input
+                type="text"
+                value={loginForm.user}
+                onChange={(e) =>
+                  setLoginForm({ ...loginForm, user: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100"
+                placeholder="admin"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="ml-1 mb-1.5 block text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Password
+              </label>
+              <input
+                type="password"
+                value={loginForm.pass}
+                onChange={(e) =>
+                  setLoginForm({ ...loginForm, pass: e.target.value })
+                }
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-medium text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-100"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            {loginError ? (
+              <div className="flex items-center gap-3 rounded-lg border border-rose-100 bg-rose-50 p-3 dark:border-rose-800 dark:bg-rose-900/20">
+                <Warning size={18} className="shrink-0 text-rose-500" />
+                <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
+                  {loginError}
+                </p>
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="mt-2 w-full rounded-xl bg-primary py-3.5 font-black text-white shadow-lg shadow-primary/20 transition-all hover:bg-primary-dark disabled:opacity-70"
+            >
+              {isLoggingIn ? "Verifying..." : "Grant Access"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="w-full bg-transparent py-2 text-xs font-bold text-slate-400 transition-colors hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              Back to Homepage
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
