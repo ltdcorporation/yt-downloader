@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint + queue worker + frontend wiring)_
+_Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+Subscription/Billing+Admin Settings API wired end-to-end ke frontend)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -21,6 +21,11 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
 - [x] MP3 flow UI aktif di home (create job + polling + state done/failed + download)
 - [x] `/history` sudah terhubung ke API real (list/stats/redownload/delete)
 - [x] `/settings` sudah terhubung ke API real (load + patch + save/discard)
+- [x] `/subscription` sudah terhubung ke API real (load plan + update + cancel/reactivate + billing history + receipt)
+- [x] `/admin` dashboard sudah terhubung ke API real (users stats + recent users + admin jobs + maintenance status)
+- [x] `/admin/users` + `/admin/users/[id]` sudah terhubung ke API real (list/detail/update role-plan-profile)
+- [x] `/admin/maintenance` sudah terhubung ke API real (load + patch versioned + conflict handling)
+- [x] `/admin/settings` sudah terhubung ke API real (admin system settings + admin profile wiring)
 - [x] Avatar user real sudah terpadu di UI (navbar + settings), fallback ke static default image
 - [ ] Logging analytics event resolve success/fail per platform belum ditambahkan
 - [ ] Fallback UX khusus untuk kasus auto-download diblok browser belum dipoles penuh
@@ -119,7 +124,28 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
 - [x] State “belum support HLS-only” + CTA fallback tampil saat code muncul
 - [ ] Logging event ringan success/fail resolve TikTok belum ada
 
-### I. Frontend Quality Checklist
+### I. Milestone FE-8 — Admin Console + Subscription Wiring (Delivered Baseline, 2026-03-27)
+
+**Target:** seluruh surface admin + subscription tidak lagi mock; semua state utama ambil dari backend API real dan conflict-safe.
+
+- [x] `/admin` dashboard pakai API real:
+  - [x] users stats (`GET /v1/admin/users/stats`)
+  - [x] recent users (`GET /v1/admin/users`)
+  - [x] recent jobs (`GET /admin/jobs`)
+  - [x] maintenance status (`GET /v1/admin/maintenance`)
+- [x] `/admin/users` pakai API real (pagination + role toggle)
+- [x] `/admin/users/[id]` pakai API real (detail + update role/plan/profile fields)
+- [x] `/admin/maintenance` pakai API real (versioned patch + conflict recovery)
+- [x] `/subscription` pakai API real:
+  - [x] subscription dashboard (`GET /v1/subscription`)
+  - [x] update plan (`PATCH /v1/subscription`)
+  - [x] cancel/reactivate (`POST /v1/subscription/cancel|reactivate`)
+  - [x] billing history + receipt (`GET /v1/billing/history`, `GET /v1/billing/invoices/{id}/receipt`)
+- [ ] Next hardening (belum):
+  - [ ] Tambah skeleton/optimistic UX untuk latency tinggi di admin pages
+  - [ ] Tambah integration test FE untuk flow admin/settings/subscription critical path
+
+### J. Frontend Quality Checklist
 
 - [x] Error message mayoritas human-readable (termasuk mapping HLS-only)
 - [ ] Normalisasi seluruh error backend edge-case ke copy non-teknis belum 100%
@@ -154,6 +180,22 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
   - [x] `GET /v1/jobs/:id`
   - [x] `GET /admin/jobs`
   - [x] `POST /v1/history` (create/resolve capture)
+  - [x] `GET /v1/maintenance`
+  - [x] `GET /v1/subscription`
+  - [x] `PATCH /v1/subscription`
+  - [x] `POST /v1/subscription/cancel`
+  - [x] `POST /v1/subscription/reactivate`
+  - [x] `GET /v1/billing/history`
+  - [x] `GET /v1/billing/invoices/{id}`
+  - [x] `GET /v1/billing/invoices/{id}/receipt`
+  - [x] `GET /v1/admin/users`
+  - [x] `GET /v1/admin/users/stats`
+  - [x] `GET /v1/admin/users/{id}`
+  - [x] `PATCH /v1/admin/users/{id}`
+  - [x] `GET /v1/admin/maintenance`
+  - [x] `PATCH /v1/admin/maintenance`
+  - [x] `GET /v1/admin/settings`
+  - [x] `PATCH /v1/admin/settings`
 - [x] History backend enterprise **Phase 1** selesai:
   - [x] Store layer `internal/history` (memory + postgres)
   - [x] Auto schema bootstrap tabel `history_items` + `history_attempts`
@@ -172,9 +214,9 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
   - [x] Endpoint `POST /v1/history` (auth required) untuk simpan event resolve awal
   - [x] Enum/filter status history sudah mencakup `resolved`
   - [x] FE home flow kirim create-history saat resolve (best-effort, non-blocking)
-- [ ] History backend enterprise **Phase 4 hardening** (next):
-  - [ ] Sinkronkan constraint schema Postgres agar status `resolved` diterima native
-  - [ ] Tambah integration test Postgres untuk jalur `POST /v1/history`
+- [x] History backend enterprise **Phase 4 hardening** delivered (2026-03-27):
+  - [x] Constraint schema Postgres sudah sinkron dan menerima status `resolved`
+  - [x] Integration test Postgres untuk jalur `POST /v1/history` sudah ditambahkan
 - [x] Settings/Profile backend enterprise baseline selesai:
   - [x] Store layer `internal/settings` (memory + postgres)
   - [x] Auto schema bootstrap tabel `user_settings` + `user_settings_audit`
@@ -187,6 +229,24 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
   - [x] Image normalization pipeline: center-crop + resize `512x512` + encode WebP
   - [x] R2 public-host delivery aktif (`AVATAR_PUBLIC_BASE_URL` + `AVATAR_R2_KEY_PREFIX`)
   - [x] Strict replace semantics aktif (delete avatar lama wajib sukses, rollback bila gagal)
+- [x] Admin user management backend baseline delivered:
+  - [x] Detail user endpoint aktif (`GET /v1/admin/users/{id}`)
+  - [x] Update user endpoint aktif (`PATCH /v1/admin/users/{id}`)
+  - [x] User stats endpoint aktif (`GET /v1/admin/users/stats`)
+  - [x] Validasi patch role/plan/full_name + guard self-demote admin sudah aktif
+- [x] Maintenance backend domain delivered:
+  - [x] Endpoint publik status (`GET /v1/maintenance`)
+  - [x] Endpoint admin mutation (`GET/PATCH /v1/admin/maintenance`)
+  - [x] Optimistic concurrency + conflict code + audit trail aktif
+  - [x] Guard middleware maintenance mode (503 non-admin path) aktif
+- [x] Subscription/Billing backend domain delivered:
+  - [x] Subscription dashboard (`GET /v1/subscription`)
+  - [x] Plan update/cancel/reactivate (`PATCH /v1/subscription`, `POST /v1/subscription/cancel|reactivate`)
+  - [x] Billing history + invoice + receipt endpoint aktif
+- [x] Admin system settings backend delivered:
+  - [x] Endpoint `GET/PATCH /v1/admin/settings` aktif (alias `/admin/settings`)
+  - [x] Store layer `internal/adminsettings` (memory + postgres)
+  - [x] Optimistic concurrency + audit trail (`admin_system_settings_audit`) aktif
 - [ ] Settings/Profile hardening (next):
   - [ ] Tambah integration test Postgres untuk `internal/settings` (CRUD + conflict + audit)
   - [ ] Pindahkan schema rollout ke migration explicit (hindari runtime DDL drift)
@@ -395,7 +455,7 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
 
 - [ ] Next hardening (belum):
   - [ ] Signed resolve snapshot/token untuk cegah tampering parameter trim
-  - [ ] Owner-scope enforcement penuh untuk `GET /v1/jobs/:id`
+  - [x] Owner-scope enforcement penuh untuk `GET /v1/jobs/:id` (delivered 2026-03-27)
   - [ ] Benchmark CPU/latency ffmpeg + tuning preset kualitas output
 
 ### K. Backend Quality Checklist
@@ -415,9 +475,9 @@ _Last update: 2026-03-26 (YouTube video-cut backend phase-2 delivered: endpoint 
 - [ ] Test integration Postgres untuk settings store belum ada
 - [ ] Rollout schema settings masih runtime-ensure (belum migration file)
 - [ ] Kontrak explicit reject untuk null-field patch settings belum enforced penuh
-- [ ] Parity status `resolved` antara handler enum dan constraint schema Postgres
+- [x] Parity status `resolved` antara handler enum dan constraint schema Postgres
 - [ ] Metrics observability khusus avatar pipeline belum lengkap
-- [ ] Endpoint `GET /v1/jobs/:id` owner-scoped untuk session login
+- [x] Endpoint `GET /v1/jobs/:id` owner-scoped untuk session login
 - [ ] Semua dependency runtime tervalidasi saat startup
 - [ ] Error backend konsisten & aman ditampilkan ke frontend
 - [ ] Worker tidak silent-fail
@@ -453,6 +513,11 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] User bisa baca/update profile dasar via `GET/PATCH /v1/profile` (owner-scoped)
 - [x] User bisa baca/update settings via `GET/PATCH /v1/settings` dengan version conflict-safe (`settings_version_conflict`)
 - [x] User bisa upload/remove avatar via `POST/DELETE /v1/profile/avatar` (owner-scoped)
+- [x] Maintenance API enterprise aktif (`GET /v1/maintenance`, `GET/PATCH /v1/admin/maintenance`)
+- [x] Subscription/Billing API enterprise aktif (`GET/PATCH /v1/subscription`, billing history/invoice/receipt)
+- [x] Admin user management API enterprise aktif (`GET /v1/admin/users`, `GET /v1/admin/users/stats`, `GET/PATCH /v1/admin/users/{id}`)
+- [x] Admin system settings API enterprise aktif (`GET/PATCH /v1/admin/settings`)
+- [x] Parity `resolved` + owner-scope `GET /v1/jobs/:id` sudah aktif
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video Instagram (termasuk HLS-only) 100% covered
 - [ ] Semua varian post video TikTok (termasuk HLS-only) 100% covered
@@ -592,8 +657,8 @@ MVP dianggap siap kalau semua checklist ini true:
 
 ### D. Catatan batasan saat ini (History)
 
-- [ ] Constraint status di schema Postgres belum memasukkan `resolved` (perlu align dengan `POST /v1/history`)
-- [ ] Endpoint `GET /v1/jobs/:id` belum owner-scoped untuk pengguna login
+- [x] Constraint status di schema Postgres sudah memasukkan `resolved` (align dengan `POST /v1/history`)
+- [x] Endpoint `GET /v1/jobs/:id` sudah owner-scoped untuk pengguna login
 - [ ] Retention/purge terjadwal untuk history belum aktif
 - [ ] Observability history (metrics + audit fields) belum lengkap
 
@@ -771,6 +836,7 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 | `/admin/users` | Daftar manajemen seluruh user |
 | `/admin/users/[id]` | (Dynamic) Detail profil dan aktivitas user spesifik |
 | `/admin/maintenance` | Kontrol sistem dan status layanan |
+| `/admin/settings` | Pengaturan sistem admin + preferensi default aplikasi |
 
 ### Branch: `add/trim-heatmap-modal`
 
@@ -781,11 +847,11 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 
 ---
 
-## ) Update: 26/03/2026
+## 12) Update: 26/03/2026
 
 ### Branch: `create/add-subscription-and-ui-admin`
 - [x] fix/cleaning-ui-admin: hapus beberapa mock ui pada /admin/users
-- [ ] fix/cleaning-ui-admin: penambahan ui settings di admin page
+- [x] fix/cleaning-ui-admin: penambahan ui settings di admin page (superseded oleh wiring global admin settings 27/03)
 - [ ] fix/cleaning-ui-admin: hapus section yang tidak perlu di setting
 
 ### Branch: `add/implements-roles`
@@ -795,3 +861,74 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 - [ ] add/implements-roles: fix tidak bisa login menggunakan kredensial admin
 - [ ] add/implements-roles: fix tidak bisa mengakses opsi di page admin
 - [ ] add/implements-roles: penambahan dummy user random tipe subs dan pegination tabel admin opsi users
+
+---
+
+## 13) Update: 27/03/2026
+
+### Branch: `main` (enterprise hardening + full wiring admin/subscription)
+
+- [x] **History Phase-4 hardening selesai**
+  - [x] Constraint Postgres `history_attempts.status` sudah include `resolved`
+  - [x] Existing schema lama auto-upgrade constraint saat `EnsureReady`
+  - [x] Integration test Postgres untuk `POST /v1/history` sudah ada
+- [x] **Job access hardening selesai**
+  - [x] `GET /v1/jobs/:id` sekarang owner-scoped untuk job yang terikat history attempt
+  - [x] Non-owner -> `404`, no-session untuk owned job -> `401 invalid_session`
+  - [x] Backward-safe untuk job legacy/anon yang tidak punya owner mapping
+
+- [x] **Admin Users API enterprise selesai (detail + mutate + stats)**
+  - [x] `GET /v1/admin/users/{id}`
+  - [x] `PATCH /v1/admin/users/{id}`
+  - [x] `GET /v1/admin/users/stats`
+  - [x] Validasi role/plan/full_name + self-demote guard admin aktif
+  - [x] Store/service support stats aktif untuk memory + postgres backend
+
+- [x] **Maintenance domain backend selesai**
+  - [x] Domain `internal/maintenance` (memory + postgres)
+  - [x] Endpoint admin: `GET/PATCH /v1/admin/maintenance` (alias `/admin/maintenance`)
+  - [x] Endpoint publik: `GET /v1/maintenance`
+  - [x] Versioned patch + conflict handling + audit trail aktif
+  - [x] Maintenance guard middleware aktif (route umum -> 503 saat mode ON, admin bypass)
+
+- [x] **Subscription/Billing domain backend selesai**
+  - [x] Domain `internal/billing` (memory + postgres)
+  - [x] `GET /v1/subscription`
+  - [x] `PATCH /v1/subscription`
+  - [x] `POST /v1/subscription/cancel`
+  - [x] `POST /v1/subscription/reactivate`
+  - [x] `GET /v1/billing/history`
+  - [x] `GET /v1/billing/invoices/{id}`
+  - [x] `GET /v1/billing/invoices/{id}/receipt`
+
+- [x] **Admin system settings backend selesai (bukan profile-only)**
+  - [x] Domain `internal/adminsettings` (memory + postgres)
+  - [x] Endpoint `GET/PATCH /v1/admin/settings` (alias `/admin/settings`)
+  - [x] Optimistic concurrency (`meta.version`) + conflict code
+  - [x] Audit trail `admin_system_settings_audit` aktif
+
+- [x] **Frontend wiring full real-data (hapus mock surface utama admin/subscription)**
+  - [x] `/subscription` -> API real plan/billing/cancel/reactivate/receipt
+  - [x] `/admin/maintenance` -> API real + version conflict recovery
+  - [x] `/admin` dashboard -> API real stats/users/jobs/maintenance
+  - [x] `/admin/users` -> API real list + role toggle
+  - [x] `/admin/users/[id]` -> API real detail + patch role/plan/profile fields
+  - [x] `/admin/settings` -> API real admin system settings + profile wiring
+
+### Verification Summary (27/03/2026)
+
+- [x] `go test ./internal/http ./internal/history`
+- [x] `go test ./internal/auth ./internal/http`
+- [x] `go test ./internal/maintenance ./internal/billing ./internal/http`
+- [x] `go test ./internal/adminsettings ./internal/http ./internal/auth`
+- [x] `make backend-test`
+- [x] `npm run build` (apps/web)
+
+### Commits (main)
+
+- [x] `7cec4e2` — backend: enforce owned job access and resolved history parity
+- [x] `7117891` — backend: add admin user detail/update APIs with validated patch flow
+- [x] `bcdd90e` — backend: add maintenance and subscription/billing APIs
+- [x] `d63275c` — web: wire maintenance and subscription pages to backend APIs
+- [x] `1f487f8` — admin: wire dashboard and users to real backend data
+- [x] `8c2122f` — admin-settings: add global settings API and wire admin settings page
