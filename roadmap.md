@@ -1,6 +1,6 @@
 # Roadmap Video Downloader
 
-_Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+Subscription/Billing+Admin Settings API wired end-to-end ke frontend)_
+_Last update: 2026-03-29 (Admin dashboard aggregate API live, fan-out rate-limit issue fixed, roadmap disinkronkan dengan wiring code terbaru)_
 
 > Struktur ini sengaja dipisah: **Frontend full di atas**, **Backend full di bawah**.
 >
@@ -22,7 +22,7 @@ _Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+
 - [x] `/history` sudah terhubung ke API real (list/stats/redownload/delete)
 - [x] `/settings` sudah terhubung ke API real (load + patch + save/discard)
 - [x] `/subscription` sudah terhubung ke API real (load plan + update + cancel/reactivate + billing history + receipt)
-- [x] `/admin` dashboard sudah terhubung ke API real (users stats + recent users + admin jobs + maintenance status)
+- [x] `/admin` dashboard sudah terhubung ke API real via endpoint agregat `GET /v1/admin/dashboard` (stats + users + jobs + maintenance dalam 1 request)
 - [x] `/admin/users` + `/admin/users/[id]` sudah terhubung ke API real (list/detail/update role-plan-profile)
 - [x] `/admin/maintenance` sudah terhubung ke API real (load + patch versioned + conflict handling)
 - [x] `/admin/settings` sudah terhubung ke API real (admin system settings + admin profile wiring)
@@ -124,15 +124,14 @@ _Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+
 - [x] State “belum support HLS-only” + CTA fallback tampil saat code muncul
 - [ ] Logging event ringan success/fail resolve TikTok belum ada
 
-### I. Milestone FE-8 — Admin Console + Subscription Wiring (Delivered Baseline, 2026-03-27)
+### I. Milestone FE-8 — Admin Console + Subscription Wiring (Delivered baseline 2026-03-27, hardened 2026-03-29)
 
 **Target:** seluruh surface admin + subscription tidak lagi mock; semua state utama ambil dari backend API real dan conflict-safe.
 
-- [x] `/admin` dashboard pakai API real:
-  - [x] users stats (`GET /v1/admin/users/stats`)
-  - [x] recent users (`GET /v1/admin/users`)
-  - [x] recent jobs (`GET /admin/jobs`)
-  - [x] maintenance status (`GET /v1/admin/maintenance`)
+- [x] `/admin` dashboard pakai API real teragregasi:
+  - [x] snapshot dashboard (`GET /v1/admin/dashboard`)
+  - [x] payload mencakup users stats + recent users + recent jobs + maintenance status
+  - [x] fetch fan-out lama diganti single request (rate-limit friendly)
 - [x] `/admin/users` pakai API real (pagination + role toggle)
 - [x] `/admin/users/[id]` pakai API real (detail + update role/plan/profile fields)
 - [x] `/admin/maintenance` pakai API real (versioned patch + conflict recovery)
@@ -188,6 +187,7 @@ _Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+
   - [x] `GET /v1/billing/history`
   - [x] `GET /v1/billing/invoices/{id}`
   - [x] `GET /v1/billing/invoices/{id}/receipt`
+  - [x] `GET /v1/admin/dashboard`
   - [x] `GET /v1/admin/users`
   - [x] `GET /v1/admin/users/stats`
   - [x] `GET /v1/admin/users/{id}`
@@ -234,6 +234,10 @@ _Last update: 2026-03-27 (History hardening parity delivered, Admin+Maintenance+
   - [x] Update user endpoint aktif (`PATCH /v1/admin/users/{id}`)
   - [x] User stats endpoint aktif (`GET /v1/admin/users/stats`)
   - [x] Validasi patch role/plan/full_name + guard self-demote admin sudah aktif
+- [x] Admin dashboard aggregate API delivered:
+  - [x] Endpoint `GET /v1/admin/dashboard` aktif
+  - [x] Payload bundling `stats + users + jobs + maintenance` dalam satu snapshot
+  - [x] Frontend `/admin` sudah migrasi ke endpoint ini untuk mengurangi burst request
 - [x] Maintenance backend domain delivered:
   - [x] Endpoint publik status (`GET /v1/maintenance`)
   - [x] Endpoint admin mutation (`GET/PATCH /v1/admin/maintenance`)
@@ -516,6 +520,7 @@ MVP dianggap siap kalau semua checklist ini true:
 - [x] Maintenance API enterprise aktif (`GET /v1/maintenance`, `GET/PATCH /v1/admin/maintenance`)
 - [x] Subscription/Billing API enterprise aktif (`GET/PATCH /v1/subscription`, billing history/invoice/receipt)
 - [x] Admin user management API enterprise aktif (`GET /v1/admin/users`, `GET /v1/admin/users/stats`, `GET/PATCH /v1/admin/users/{id}`)
+- [x] Admin dashboard aggregate API enterprise aktif (`GET /v1/admin/dashboard`)
 - [x] Admin system settings API enterprise aktif (`GET/PATCH /v1/admin/settings`)
 - [x] Parity `resolved` + owner-scope `GET /v1/jobs/:id` sudah aktif
 - [ ] Semua varian post video X (termasuk HLS-only) 100% covered
@@ -910,7 +915,7 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 - [x] **Frontend wiring full real-data (hapus mock surface utama admin/subscription)**
   - [x] `/subscription` -> API real plan/billing/cancel/reactivate/receipt
   - [x] `/admin/maintenance` -> API real + version conflict recovery
-  - [x] `/admin` dashboard -> API real stats/users/jobs/maintenance
+  - [x] `/admin` dashboard -> API real aggregate snapshot (`GET /v1/admin/dashboard`) untuk stats/users/jobs/maintenance
   - [x] `/admin/users` -> API real list + role toggle
   - [x] `/admin/users/[id]` -> API real detail + patch role/plan/profile fields
   - [x] `/admin/settings` -> API real admin system settings + profile wiring
@@ -932,3 +937,28 @@ Halaman-halaman ini berada dalam grup `(admin)` dan hanya untuk administrator:
 - [x] `d63275c` — web: wire maintenance and subscription pages to backend APIs
 - [x] `1f487f8` — admin: wire dashboard and users to real backend data
 - [x] `8c2122f` — admin-settings: add global settings API and wire admin settings page
+
+---
+
+## 14) Update: 29/03/2026
+
+### Branch: `main` (admin dashboard rate-limit hardening + endpoint agregat)
+
+- [x] **Root cause incident dashboard dicatat**
+  - [x] Limit global per-IP (`RATE_LIMIT_RPS=3`) bentrok dengan burst initial load dashboard (auth + multi-request paralel)
+  - [x] Arsitektur lama fan-out request pada `/admin` meningkatkan risiko `429 rate limit exceeded`
+- [x] **Backend hardening**
+  - [x] Endpoint agregat baru `GET /v1/admin/dashboard` aktif
+  - [x] Payload snapshot mencakup `stats + users + jobs + maintenance` dalam satu response
+  - [x] Unit test handler + parser limit ditambahkan (`admin_dashboard_handlers_test.go`)
+- [x] **Frontend hardening**
+  - [x] `/admin` dashboard migrasi dari 4 call paralel ke 1 call agregat
+  - [x] Wiring API client ditambahkan (`api.getAdminDashboard`)
+- [x] **Verification + deploy**
+  - [x] `go test ./internal/http/...` lulus
+  - [x] `npm run lint` lulus
+  - [x] `./deploy.sh` sukses (healthz + smoke MP3 pass)
+
+### Commit (main)
+
+- [x] `9dd7e20` — feat(admin): add bundled dashboard API to remove load fan-out
