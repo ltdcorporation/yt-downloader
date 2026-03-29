@@ -120,6 +120,7 @@ GET  /v1/download/mp4       ?url=&format_id=
 POST /v1/jobs/mp3           { url }
 POST /v1/jobs/video-cut     { url, format_id, cut_mode, manual?/heatmap? }
 GET  /v1/jobs/:id
+GET  /v1/admin/dashboard   (admin auth; bundled snapshot for stats/users/jobs/maintenance)
 GET  /admin/jobs            (basic auth)
 ```
 

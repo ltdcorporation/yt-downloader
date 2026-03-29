@@ -393,6 +393,22 @@ export interface AdminJobRecord {
   expires_at?: string;
 }
 
+export interface AdminDashboardResponse {
+  stats: AdminUsersStats;
+  users: {
+    items: AuthUser[];
+    page: {
+      total: number;
+      limit: number;
+      offset: number;
+    };
+  };
+  jobs: {
+    items: AdminJobRecord[];
+  };
+  maintenance: MaintenanceSnapshotResponse;
+}
+
 export interface ProfileResponse {
   profile: AuthUser;
 }
@@ -787,6 +803,22 @@ export const api = {
 
   getMp4DownloadUrl: (url: string, formatId: string) =>
     `${API_BASE_URL}/v1/download/mp4?url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`,
+
+  getAdminDashboard: (params?: { usersLimit?: number; jobsLimit?: number }) => {
+    const query = new URLSearchParams();
+
+    if (typeof params?.usersLimit === "number" && params.usersLimit > 0) {
+      query.set("users_limit", String(params.usersLimit));
+    }
+    if (typeof params?.jobsLimit === "number" && params.jobsLimit > 0) {
+      query.set("jobs_limit", String(params.jobsLimit));
+    }
+
+    const suffix = query.toString();
+    return fetcher<AdminDashboardResponse>(
+      suffix ? `/v1/admin/dashboard?${suffix}` : "/v1/admin/dashboard",
+    );
+  },
 
   listAdminUsers: (limit = 20, offset = 0) =>
     fetcher<{

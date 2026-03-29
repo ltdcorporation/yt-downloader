@@ -159,18 +159,15 @@ export default function AdminDashboardPage() {
     setLoadError("");
 
     try {
-      const [statsResponse, usersResponse, jobsResponse, maintenanceResponse] =
-        await Promise.all([
-          api.getAdminUsersStats(),
-          api.listAdminUsers(8, 0),
-          api.adminJobs(20),
-          api.getAdminMaintenance(),
-        ]);
+      const dashboard = await api.getAdminDashboard({
+        usersLimit: 8,
+        jobsLimit: 20,
+      });
 
-      setStats(statsResponse.stats);
-      setRecentUsers(usersResponse.items);
-      setRecentJobs(jobsResponse.items);
-      setServices(maintenanceResponse.maintenance.services);
+      setStats(dashboard.stats);
+      setRecentUsers(dashboard.users.items);
+      setRecentJobs(dashboard.jobs.items);
+      setServices(dashboard.maintenance.maintenance.services);
     } catch (error) {
       const message =
         error instanceof APIError ? error.message : "Failed to load dashboard";
